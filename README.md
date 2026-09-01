@@ -22,6 +22,7 @@ FlowAI Studio 是一个先进的全栈可视化 AI 应用低代码编排平台�
 - 调试工具：内置检索测试功能，可在编排前验证知识库的召回效果。
 
 ### 3. 灵活的插件与工具系统
+
 - MCP 协议集成：遵循 Model Context Protocol，通过 stdio + JSON-RPC 2.0 协议，支持动态连接、断开外部 MCP Server，自动发现并调用其提供的工具。
 - 内置工具库：提供时间查询、HTTP 请求、JSON 处理、正则匹配、计算器、代码执行（JS 沙箱）等常用工具。
 - 自定义技能：支持开发者定义自己的工具接口（配置 API 地址、HTTP 方法、请求头），并将其作为节点在工作流中使用。
@@ -141,3 +142,5 @@ curl -s -X POST http://localhost:3000/api/rag/retrieve \
 <img width="1612" height="961" alt="image" src="https://github.com/user-attachments/assets/d457aff7-cfa4-4f81-aac8-f5496c36994f" />
 <img width="1612" height="961" alt="image" src="https://github.com/user-attachments/assets/c10a3711-c73a-4ca9-af23-28f9bf225a3b" />
 <img width="1612" height="961" alt="image" src="https://github.com/user-attachments/assets/dcc9bf67-52e3-4420-84d3-9f1693c38cf0" />
+
+111111111111111111111111111111111
