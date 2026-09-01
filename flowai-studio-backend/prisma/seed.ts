@@ -100,7 +100,7 @@ FlowAI Studio 是一个先进的全栈可视化 AI 应用低代码编排平台�
     const escapedContent = chunks[i].replace(/'/g, "''");
 
     await prisma.$executeRawUnsafe(`
-      INSERT INTO document_chunks (id, content, embedding, chunk_index, start_index, end_index, document_id, created_at)
+      INSERT INTO document_chunks ("id", "content", "embedding", "chunkIndex", "startIndex", "endIndex", "documentId", "createdAt")
       VALUES (
         gen_random_uuid(),
         '${escapedContent}',
