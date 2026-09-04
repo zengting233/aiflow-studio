@@ -36,8 +36,8 @@ const Login: React.FC = () => {
   const onSubmit = async (values: { username: string; password: string; remember?: boolean }) => {
     handleClearError()
     try {
-      const { username, password } = values
-      await login({ username, password })
+      const { username, password ,remember} = values
+      await login({ username, password , remember})
       navigate('/apps')
     } catch (err) {
       console.error('Login error:', err)

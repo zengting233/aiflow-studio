@@ -87,11 +87,29 @@ const parseLoginError = (error: any): LoginError => {
       };
   }
 };
+const getStoredToken = () => {
+  return (
+    localStorage.getItem('token') ||
+    sessionStorage.getItem('token')
+  )
+}
+const getStoredUser = (): User | null => {
+  const raw =
+    localStorage.getItem('user') ||
+    sessionStorage.getItem('user')
 
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw) as User
+  } catch {
+    return null
+  }
+}
 export const createUserSlice: StateCreator<UserSlice> = (set, get) => ({
-  user: null,
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  user: getStoredUser(),
+  token: getStoredToken(),
+  isAuthenticated: !!getStoredToken(),
   isLoading: false,
   authError: null,
 
@@ -116,6 +134,7 @@ export const createUserSlice: StateCreator<UserSlice> = (set, get) => ({
     set({ isLoading: true, authError: null })
     
     try {
+      
       // 前端验证
       if (!data.username?.trim()) {
         throw new Error('请输入用户名')
@@ -124,14 +143,27 @@ export const createUserSlice: StateCreator<UserSlice> = (set, get) => ({
       if (!data.password?.trim()) {
         throw new Error('请输入密码')
       }
-
-      const response = await request.post('/users/login', data)
+      const {username,password} =data
+      const response = await request.post('/users/login', {username,password})
       const { user, token } = response.data as { user: User; token: string }
       
       // 保存到本地存储
-      localStorage.setItem('token', token)
-      localStorage.setItem('user', JSON.stringify(user))
-      
+      // localStorage.setItem('token', token)
+      // localStorage.setItem('user', JSON.stringify(user))
+      if (data.remember) {
+        localStorage.setItem('token', token)
+        localStorage.setItem('user', JSON.stringify(user))
+  
+        sessionStorage.removeItem('token')
+        sessionStorage.removeItem('user')
+      } else {
+        sessionStorage.setItem('token', token)
+        sessionStorage.setItem('user', JSON.stringify(user))
+  
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      }
+
       set({ 
         user, 
         token, 
@@ -189,11 +221,15 @@ export const createUserSlice: StateCreator<UserSlice> = (set, get) => ({
   logout: () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
-    set({ 
-      user: null, 
-      token: null, 
-      isAuthenticated: false, 
-      authError: null 
+  
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('user')
+  
+    set({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      authError: null,
     })
   },
 

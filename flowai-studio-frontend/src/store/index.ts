@@ -36,9 +36,7 @@ export const useStore = create<StoreState>()(
     {
       name: 'flowai-storage',
       partialize: (state) => ({
-        user: state.user,
-        token: state.token,
-        isAuthenticated: state.isAuthenticated,
+        
         globalConfig: state.globalConfig,
       }),
     }
