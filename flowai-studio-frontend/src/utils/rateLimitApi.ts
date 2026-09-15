@@ -22,17 +22,17 @@ export interface CircuitBreakerStats {
 
 export async function getRateLimitConfig(): Promise<Record<string, RateLimitConfig>> {
   const res: any = await request.get('/rate-limit/config')
-  return res.limits
+  return res.data.limits
 }
 
 export async function getUserQuota(userId: string): Promise<UserQuota[]> {
   const res: any = await request.get(`/rate-limit/quota/${userId}`)
-  return res.quotas
+  return res.data.quotas
 }
 
 export async function getCircuitBreakers(): Promise<CircuitBreakerStats[]> {
   const res: any = await request.get('/rate-limit/circuit-breakers')
-  return res.circuitBreakers
+  return res.data.circuitBreakers
 }
 
 export async function resetCircuitBreaker(name: string): Promise<{ success: boolean; message: string }> {

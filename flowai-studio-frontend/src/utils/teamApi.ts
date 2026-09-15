@@ -15,6 +15,8 @@ import type {
   AppShare,
   UpdateShareSettingsForm,
   EmbedCodeResponse,
+  SharedAppData,
+  SharedAppRunResponse,
 } from '../types'
 
 // ============ 团队 API ============
@@ -97,10 +99,6 @@ export const toggleApiKey = (keyId: string, isActive: boolean) =>
 export const generateShareLink = (appId: string) =>
   request.post(`/apps/${appId}/share`) as Promise<{ data: AppShare }>
 
-/** 获取分享信息 */
-export const getShareInfo = (appId: string) =>
-  request.get(`/apps/${appId}/share`) as Promise<{ data: AppShare }>
-
 /** 更新分享设置 */
 export const updateShareSettings = (appId: string, data: UpdateShareSettingsForm) =>
   request.patch(`/apps/${appId}/share`, data) as Promise<{ data: AppShare }>
@@ -115,4 +113,8 @@ export const getEmbedCode = (appId: string) =>
 
 /** 获取公开分享的应用（无需认证） */
 export const getSharedApp = (shareLink: string) =>
-  request.get(`/share/${shareLink}`) as Promise<{ data: any }>
+  request.get(`/share/${shareLink}`) as Promise<{ data: SharedAppData }>
+
+/** 运行公开分享的应用（无需认证） */
+export const runSharedApp = (shareLink: string, inputs: Record<string, string>) =>
+  request.post(`/share/${shareLink}/run`, { inputs }) as Promise<{ data: SharedAppRunResponse }>

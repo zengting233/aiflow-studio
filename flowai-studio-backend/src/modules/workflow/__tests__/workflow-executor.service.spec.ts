@@ -97,6 +97,36 @@ describe('WorkflowExecutorService', () => {
 
       expect(capturedContext.question).toBe('hello');
     });
+
+    it('should execute a shared downstream node after condition branches rejoin', async () => {
+      mockPrisma.workflow.findUnique.mockResolvedValue(
+        buildWorkflow(
+          [
+            { id: 'start', type: 'start', data: {} },
+            { id: 'condition', type: 'condition', data: {} },
+            { id: 'yes', type: 'llm', data: {} },
+            { id: 'no', type: 'llm', data: {} },
+            { id: 'output', type: 'output', data: {} },
+          ],
+          [
+            { source: 'start', target: 'condition' },
+            { source: 'condition', sourceHandle: 'true', target: 'yes' },
+            { source: 'condition', sourceHandle: 'false', target: 'no' },
+            { source: 'yes', target: 'output' },
+            { source: 'no', target: 'output' },
+          ],
+        ),
+      );
+      mockExecutor.execute.mockImplementation((node: any) =>
+        Promise.resolve(node.id === 'condition' ? { result: true } : { result: 'ok' }),
+      );
+
+      const result = await service.executeWorkflow('wf_1', { inputs: {} });
+
+      expect(result.yes).toEqual({ result: 'ok' });
+      expect(result.no).toBeUndefined();
+      expect(result.output).toEqual({ result: 'ok' });
+    });
   });
 
   // ============================================================

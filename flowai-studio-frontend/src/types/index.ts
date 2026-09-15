@@ -130,6 +130,7 @@ export interface AgentNodeData extends BaseNodeData {
   memoryWindowSize: number
   /** Supervisor 模式专用 */
   supervisorPrompt?: string
+  supervisorModel?: string
   /** Worker 列表 (supervisor 模式) */
   workers?: WorkerConfig[]
 }
@@ -156,6 +157,8 @@ export interface WorkflowEdge {
   source: string
   target: string
   label?: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
 }
 
 export interface Workflow {
@@ -435,6 +438,28 @@ export interface AppShare {
   accessCount: number
   embedConfig?: EmbedConfig
   createdAt: string
+}
+
+export interface SharedAppInput {
+  nodeId: string
+  field: string
+  label: string
+}
+
+export interface SharedAppData {
+  id: string
+  name: string
+  description?: string
+  icon?: string
+  status: string
+  isPublic: boolean
+  shareLink: string
+  hasWorkflow: boolean
+  inputs: SharedAppInput[]
+}
+
+export interface SharedAppRunResponse {
+  output: unknown
 }
 
 export interface EmbedConfig {

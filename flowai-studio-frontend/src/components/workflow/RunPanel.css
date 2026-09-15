@@ -57,6 +57,34 @@
   background: var(--c-bg) !important;
 }
 
+.run-input-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.run-input-field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--c-text-primary);
+}
+
+.run-input-field-label code {
+  color: var(--c-text-tertiary);
+  font-size: 11px;
+}
+
+.run-no-input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--c-bg);
+  color: var(--c-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ---- Actions ---- */
 .run-actions {
   display: flex;

@@ -151,11 +151,14 @@ const Debug: React.FC = () => {
     const assistantMessageId = Date.now().toString() + '-assistant'
 
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      if (!token) throw new Error('登录状态已失效，请重新登录')
+
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           message: currentInput,
@@ -263,11 +266,14 @@ const Debug: React.FC = () => {
     setWfElapsed(0)
 
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      if (!token) throw new Error('登录状态已失效，请重新登录')
+
       const response = await fetch(`/api/workflows/${selectedWorkflowId}/run/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ inputs }),
       })

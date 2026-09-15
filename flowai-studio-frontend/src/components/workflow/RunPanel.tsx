@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button, Input, Empty } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Input, Empty, message } from 'antd'
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -11,6 +11,8 @@ import {
   MinusCircleOutlined,
 } from '@ant-design/icons'
 import { useStore } from '../../store'
+import { validateWorkflowForRun } from '../../utils/workflowValidation'
+import { getWorkflowInputFields } from '../../utils/workflowVariables'
 import './RunPanel.css'
 
 const { TextArea } = Input
@@ -19,32 +21,48 @@ const RunPanel: React.FC = () => {
   const {
     currentWorkflow,
     nodes,
+    edges,
     executionStates,
     executionStatus,
     streamRunWorkflow,
+    saveWorkflow,
     setExecutionStatus,
     clearExecutionStates,
   } = useStore()
 
-  const [inputsText, setInputsText] = useState('{"question": "你好，请介绍一下自己"}')
+  const inputFields = useMemo(() => getWorkflowInputFields(nodes), [nodes])
+  const [inputs, setInputs] = useState<Record<string, string>>({})
   const [isRunning, setIsRunning] = useState(false)
+
+  useEffect(() => {
+    setInputs((current) => Object.fromEntries(
+      inputFields.map((input) => [input.field, current[input.field] || '']),
+    ))
+  }, [inputFields])
 
   const handleRun = async () => {
     const workflowId = currentWorkflow?.id
     if (!workflowId) return
 
-    let inputs: Record<string, any> = {}
-    try {
-      inputs = JSON.parse(inputsText)
-    } catch {
-      // Keep empty
+    const emptyInput = inputFields.find((input) => !inputs[input.field]?.trim())
+    if (emptyInput) {
+      message.error(`请填写“${emptyInput.label}”`)
+      return
+    }
+
+    const validationErrors = validateWorkflowForRun(nodes, edges)
+    if (validationErrors.length > 0) {
+      message.error(validationErrors[0])
+      return
     }
 
     setIsRunning(true)
     try {
+      // 调试运行始终使用当前画布，并顺便持久化，避免刷新后回到旧版本。
+      await saveWorkflow(workflowId, { nodes, edges })
       await streamRunWorkflow(workflowId, inputs)
-    } catch {
-      // Error handled in store
+    } catch (error: any) {
+      message.error(error?.message || '工作流执行失败')
     } finally {
       setIsRunning(false)
     }
@@ -87,15 +105,28 @@ const RunPanel: React.FC = () => {
       <div className="run-panel-body">
         {/* Input section */}
         <div className="run-section">
-          <label className="run-section-label">输入参数 (JSON)</label>
-          <TextArea
-            value={inputsText}
-            onChange={(e) => setInputsText(e.target.value)}
-            placeholder='{"question": "你好"}'
-            rows={4}
-            className="run-input-textarea"
-            disabled={isRunning}
-          />
+          <label className="run-section-label">工作流输入</label>
+          {inputFields.length > 0 ? inputFields.map((input) => (
+            <div key={input.nodeId} className="run-input-field">
+              <div className="run-input-field-label">
+                <span>{input.label}</span>
+                <code>{input.field}</code>
+              </div>
+              <TextArea
+                value={inputs[input.field] || ''}
+                onChange={(event) => setInputs((current) => ({
+                  ...current,
+                  [input.field]: event.target.value,
+                }))}
+                placeholder={`请输入${input.label}`}
+                rows={3}
+                className="run-input-textarea"
+                disabled={isRunning}
+              />
+            </div>
+          )) : (
+            <div className="run-no-input">当前工作流没有用户输入节点，运行时不需要填写参数。</div>
+          )}
         </div>
 
         {/* Action buttons */}

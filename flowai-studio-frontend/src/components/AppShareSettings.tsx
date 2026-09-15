@@ -1,44 +1,55 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Button, Card, Switch, Form, Input, Select, Space, message,
-  Typography, Spin, Popconfirm, Tabs, Alert,
+  Typography, Spin, Popconfirm, Tabs,
 } from 'antd'
 import {
   ShareAltOutlined, CopyOutlined, LinkOutlined,
   CodeOutlined, DeleteOutlined, GlobalOutlined,
 } from '@ant-design/icons'
 import * as shareApi from '../utils/teamApi'
-import { AppShare, EmbedConfig, UpdateShareSettingsForm } from '../types'
+import { AppShare, EmbedConfig } from '../types'
 
-const { Text, Paragraph, Title } = Typography
+const { Text, Title } = Typography
 
 interface AppShareSettingsProps {
   appId: string
+  initialShareLink?: string
+  saveWorkflowForShare?: () => Promise<boolean>
 }
 
-const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId }) => {
+const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId, initialShareLink, saveWorkflowForShare }) => {
   const [shareInfo, setShareInfo] = useState<AppShare | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [embedCode, setEmbedCode] = useState<{ iframeCode: string; scriptCode: string } | null>(null)
 
   useEffect(() => {
-    loadShareInfo()
-  }, [appId])
-
-  const loadShareInfo = async () => {
-    setIsLoading(true)
-    try {
-      const response = await shareApi.getShareInfo(appId) as any
-      setShareInfo(response.data || null)
-    } catch {
-      // 应用可能还没有分享信息
+    if (!initialShareLink) {
       setShareInfo(null)
-    } finally {
-      setIsLoading(false)
+      return
     }
-  }
+
+    // POST 接口是幂等的：已有分享时返回现有配置，不再请求后端不存在的 GET 路由。
+    let cancelled = false
+    const loadExistingShare = async () => {
+      setIsLoading(true)
+      try {
+        const response = await shareApi.generateShareLink(appId) as any
+        if (!cancelled) setShareInfo(response.data)
+      } catch {
+        if (!cancelled) setShareInfo(null)
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+    void loadExistingShare()
+    return () => {
+      cancelled = true
+    }
+  }, [appId, initialShareLink])
 
   const handleGenerateShareLink = async () => {
+    if (saveWorkflowForShare && !(await saveWorkflowForShare())) return
     setIsLoading(true)
     try {
       const response = await shareApi.generateShareLink(appId) as any
@@ -46,6 +57,16 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId }) => {
       message.success('分享链接已生成')
     } catch {
       message.error('生成失败')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleUpdateSharedWorkflow = async () => {
+    if (!saveWorkflowForShare) return
+    setIsLoading(true)
+    try {
+      if (await saveWorkflowForShare()) message.success('分享页已更新为当前工作流')
     } finally {
       setIsLoading(false)
     }
@@ -127,7 +148,7 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId }) => {
             <Button
               type="primary"
               icon={<LinkOutlined />}
-              onClick={handleGenerateShareLink}
+              onClick={() => handleGenerateShareLink()}
               loading={isLoading}
             >
               生成分享链接
@@ -151,6 +172,17 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId }) => {
                 复制
               </Button>
             </div>
+            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+              分享页运行最近保存的工作流。画布修改后请更新分享页。
+            </Text>
+            <Button
+              type="primary"
+              onClick={handleUpdateSharedWorkflow}
+              loading={isLoading}
+              style={{ marginTop: 12 }}
+            >
+              保存并更新分享页
+            </Button>
 
             <div className="share-public-toggle" style={{ marginTop: 16 }}>
               <Space>
@@ -166,7 +198,7 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId }) => {
               <Text type="secondary" style={{ display: 'block', marginTop: 4, marginLeft: 28 }}>
                 {shareInfo.isPublic
                   ? '任何人都可以通过链接访问此应用'
-                  : '需要登录才能访问此应用'}
+                  : '分享链接已暂停访问'}
               </Text>
             </div>
 

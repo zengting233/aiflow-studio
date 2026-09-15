@@ -32,6 +32,16 @@
   padding: 8px;
 }
 
+.node-panel-tip {
+  margin: 2px 4px 10px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: var(--c-accent-light);
+  color: var(--c-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* Node item (draggable chip) */
 .node-item {
   display: flex;
@@ -65,6 +75,16 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--c-text-primary);
+  min-width: 0;
+}
+
+.node-item-label small {
+  display: block;
+  margin-top: 2px;
+  color: var(--c-text-tertiary);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 /* ---- Scrollbar ---- */

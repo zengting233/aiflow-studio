@@ -18,14 +18,6 @@ request.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // 添加请求时间戳，避免缓存
-    if (config.method === 'get') {
-      config.params = {
-        ...config.params,
-        _t: Date.now()
-      }
-    }
-    
     return config
   },
   (error) => {
@@ -55,6 +47,8 @@ request.interceptors.response.use(
           // 未授权，清除token并跳转到登录页
           localStorage.removeItem('token')
           localStorage.removeItem('user')
+          sessionStorage.removeItem('token')
+          sessionStorage.removeItem('user')
           
           // 如果不是登录页面，跳转到登录页
           if (!window.location.pathname.includes('/login')) {

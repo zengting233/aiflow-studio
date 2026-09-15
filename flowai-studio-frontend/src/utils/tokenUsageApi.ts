@@ -63,7 +63,8 @@ export async function getTokenUsage(params?: {
   provider?: string
   callType?: string
 }): Promise<TokenUsageResponse> {
-  return request.get('/token-usage', { params })
+  const response: any = await request.get('/token-usage', { params })
+  return response.data
 }
 
 /**
@@ -75,7 +76,8 @@ export async function getCostReport(params?: {
   applicationId?: string
   groupBy?: 'day' | 'week' | 'month' | 'model' | 'provider'
 }): Promise<CostReportResponse> {
-  return request.get('/token-usage/cost-report', { params })
+  const response: any = await request.get('/token-usage/cost-report', { params })
+  return response.data
 }
 
 /**
@@ -85,5 +87,6 @@ export async function getModelRanking(params?: {
   startDate?: string
   endDate?: string
 }): Promise<ModelRankingItem[]> {
-  return request.get('/token-usage/model-ranking', { params })
+  const response: any = await request.get('/token-usage/model-ranking', { params })
+  return response.data
 }

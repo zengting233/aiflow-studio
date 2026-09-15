@@ -66,6 +66,17 @@ describe('BM25KeywordService', () => {
       });
       expect(results).toEqual([]);
     });
+
+    it('should cast text metadata to jsonb before filtering by knowledge base', async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ cfgname: 'english' }])
+        .mockResolvedValueOnce([]);
+
+      await service.search({ query: 'hello', knowledgeBaseId: 'kb1' });
+
+      const searchSql = mockPrisma.$queryRawUnsafe.mock.calls[1][0];
+      expect(searchSql).toContain("(metadata::jsonb)->>'knowledgeBaseId' = 'kb1'");
+    });
   });
 
   describe('ensureFullTextIndex', () => {

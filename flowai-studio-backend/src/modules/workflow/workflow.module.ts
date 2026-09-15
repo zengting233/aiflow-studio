@@ -48,6 +48,6 @@ import { RateLimiterService, CircuitBreakerService } from '../../common/guards/r
     OutputNodeExecutor,
     AgentNodeExecutor,
   ],
-  exports: [WorkflowExecutorService],
+  exports: [WorkflowExecutorService, RateLimiterService, CircuitBreakerService],
 })
 export class WorkflowModule {}

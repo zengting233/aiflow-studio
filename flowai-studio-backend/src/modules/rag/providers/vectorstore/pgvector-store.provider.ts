@@ -259,26 +259,26 @@ export class PgVectorStore implements VectorStore {
     if (filter.match) {
       const { key, value } = filter.match;
       if (typeof value === 'string') {
-        parts.push(`metadata->>'${key}' = '${value.replace(/'/g, "''")}'`);
+        parts.push(`(metadata::jsonb)->>'${key}' = '${value.replace(/'/g, "''")}'`);
       } else {
-        parts.push(`metadata->>'${key}' = '${value}'`);
+        parts.push(`(metadata::jsonb)->>'${key}' = '${value}'`);
       }
     }
 
     if (filter.range) {
       const { key, gte, lte } = filter.range;
       if (gte !== undefined) {
-        parts.push(`(metadata->>'${key}')::numeric >= ${gte}`);
+        parts.push(`((metadata::jsonb)->>'${key}')::numeric >= ${gte}`);
       }
       if (lte !== undefined) {
-        parts.push(`(metadata->>'${key}')::numeric <= ${lte}`);
+        parts.push(`((metadata::jsonb)->>'${key}')::numeric <= ${lte}`);
       }
     }
 
     if (filter.in) {
       const { key, values } = filter.in;
       const valueList = values.map((v: any) => `'${String(v).replace(/'/g, "''")}'`).join(',');
-      parts.push(`metadata->>'${key}' IN (${valueList})`);
+      parts.push(`(metadata::jsonb)->>'${key}' IN (${valueList})`);
     }
 
     return parts.join(' AND ');

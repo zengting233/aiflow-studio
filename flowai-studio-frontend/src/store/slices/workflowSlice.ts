@@ -86,8 +86,13 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
   },
 
   onConnect: (connection) => {
+    const label = connection.sourceHandle === 'true'
+      ? '是'
+      : connection.sourceHandle === 'false'
+        ? '否'
+        : undefined
     set({
-      edges: addEdge(connection, get().edges),
+      edges: addEdge({ ...connection, label }, get().edges),
     })
   },
   
@@ -136,20 +141,27 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
     set({ executionStatus: 'running', executionStates: {} })
     
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      if (!token) throw new Error('登录状态已失效，请重新登录')
+
       const response = await fetch(`/api/workflows/${workflowId}/run/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ inputs })
       })
 
-      if (!response.ok) throw new Error('Stream request failed')
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null)
+        throw new Error(errorBody?.message || `工作流执行请求失败 (${response.status})`)
+      }
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No reader available')
 
+      let streamError: string | null = null
       const parser = createParser((event) => {
         if (event.type === 'event') {
           try {
@@ -165,6 +177,7 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
             } else if (data.type === 'done') {
               set({ executionStatus: 'success' })
             } else if (data.type === 'error') {
+              streamError = data.message || '工作流执行失败'
               set({ executionStatus: 'failed' })
             }
           } catch (e) {
@@ -179,6 +192,7 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
         if (done) break
         parser.feed(decoder.decode(value))
       }
+      if (streamError) throw new Error(streamError)
     } catch (error) {
       set({ executionStatus: 'failed' })
       throw error

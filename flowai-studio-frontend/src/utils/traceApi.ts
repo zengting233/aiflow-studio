@@ -81,7 +81,7 @@ export interface TraceStats {
 /** 获取 Trace 详情 */
 export async function getTraceDetail(traceId: string): Promise<TraceDetail> {
   const res: any = await request.get(`/traces/${traceId}`)
-  return res
+  return res.data
 }
 
 /** 获取工作流 Trace 列表 */
@@ -89,7 +89,7 @@ export async function getWorkflowTraces(workflowId: string, limit?: number): Pro
   const res: any = await request.get(`/traces/workflow/${workflowId}`, {
     params: { limit: limit || 20 },
   })
-  return res
+  return res.data
 }
 
 /** 获取慢 Trace 列表 */
@@ -97,7 +97,7 @@ export async function getSlowTraces(workflowId?: string, limit?: number): Promis
   const res: any = await request.get('/traces/slow/list', {
     params: { workflowId, limit: limit || 10 },
   })
-  return res
+  return res.data
 }
 
 /** 获取 Trace 统计概览 */
@@ -105,5 +105,5 @@ export async function getTraceStats(workflowId?: string): Promise<TraceStats> {
   const res: any = await request.get('/traces/stats/overview', {
     params: { workflowId },
   })
-  return res
+  return res.data
 }

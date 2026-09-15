@@ -118,6 +118,33 @@ export class WorkflowExecutorService {
     const queue: string[] = nodes
       .filter((n) => inDegree.get(n.id) === 0)
       .map((n) => n.id);
+    const activated = new Set<string>(queue);
+
+    // 每条上游边处理完成后才决定目标节点是否执行。这样条件分支重新汇合时，
+    // 未选中的分支不会把仍可由选中分支到达的公共下游误标为 skipped。
+    const settleEdge = (target: string, isActive: boolean) => {
+      if (isActive) activated.add(target);
+
+      const remaining = (runtimeInDegree.get(target) || 1) - 1;
+      runtimeInDegree.set(target, remaining);
+      if (remaining > 0) return;
+
+      if (activated.has(target)) {
+        queue.push(target);
+      } else {
+        skipNode(target);
+      }
+    };
+
+    const skipNode = (nodeId: string) => {
+      if (skipped.has(nodeId) || executed.has(nodeId) || failed.has(nodeId)) return;
+      skipped.add(nodeId);
+      sseSubject?.next({ type: 'node_status', data: { nodeId, status: 'skipped' } });
+
+      for (const edge of adjList.get(nodeId) || []) {
+        settleEdge(edge.target, false);
+      }
+    };
 
     // 启动心跳保活管理器
     const heartbeat = new HeartbeatManager(sseSubject, control.heartbeatIntervalMs);
@@ -257,25 +284,15 @@ export class WorkflowExecutorService {
 
             for (const edge of downstream) {
               if (edge.sourceHandle === matchHandle) {
-                // Decrement in-degree for the active branch target
-                const deg = (runtimeInDegree.get(edge.target) || 1) - 1;
-                runtimeInDegree.set(edge.target, deg);
-                if (deg <= 0) {
-                  queue.push(edge.target);
-                }
+                settleEdge(edge.target, true);
               } else if (edge.sourceHandle === skipHandle) {
-                // Mark skipped branch — recursively skip all descendants
-                this.skipBranch(edge.target, adjList, skipped, sseSubject);
+                settleEdge(edge.target, false);
               }
             }
           } else {
             // Normal node: activate all downstream
             for (const edge of downstream) {
-              const deg = (runtimeInDegree.get(edge.target) || 1) - 1;
-              runtimeInDegree.set(edge.target, deg);
-              if (deg <= 0 && !skipped.has(edge.target)) {
-                queue.push(edge.target);
-              }
+              settleEdge(edge.target, true);
             }
           }
         } catch (error) {
@@ -317,7 +334,7 @@ export class WorkflowExecutorService {
             );
             const downstream = adjList.get(nodeId) || [];
             for (const edge of downstream) {
-              this.skipBranch(edge.target, adjList, skipped, sseSubject);
+              settleEdge(edge.target, false);
             }
             continue;
           }
@@ -424,22 +441,4 @@ export class WorkflowExecutorService {
     return Array.from(this.cancelTokens.keys());
   }
 
-  /**
-   * Recursively mark a branch as skipped and notify via SSE
-   */
-  private skipBranch(
-    nodeId: string,
-    adjList: Map<string, { target: string; sourceHandle?: string }[]>,
-    skipped: Set<string>,
-    sseSubject?: Subject<any>,
-  ) {
-    if (skipped.has(nodeId)) return;
-    skipped.add(nodeId);
-    sseSubject?.next({ type: 'node_status', data: { nodeId, status: 'skipped' } });
-
-    const downstream = adjList.get(nodeId) || [];
-    for (const edge of downstream) {
-      this.skipBranch(edge.target, adjList, skipped, sseSubject);
-    }
-  }
 }

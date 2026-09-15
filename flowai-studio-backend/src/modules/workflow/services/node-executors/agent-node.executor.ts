@@ -81,7 +81,7 @@ export class AgentNodeExecutor implements INodeExecutor {
 
       config.supervisor = {
         systemPrompt: data.supervisorPrompt || '',
-        model: data.model || 'qwen-plus',
+        model: data.supervisorModel || data.model || 'qwen-plus',
         temperature: data.temperature ?? 0.3,
         maxIterations,
         workers: workers.map((w, i) => ({

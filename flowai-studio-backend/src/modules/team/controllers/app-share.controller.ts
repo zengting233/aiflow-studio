@@ -7,13 +7,22 @@ import {
   Body,
   Param,
   UseGuards,
+  Req,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { AppShareService } from '../services/app-share.service';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../../common/decorators/permissions.decorator';
 import { PERMISSIONS } from '../../../common/constants/permissions';
-import { IsOptional, IsBoolean, IsString, IsArray } from 'class-validator';
+import { IsOptional, IsBoolean, IsObject } from 'class-validator';
+import {
+  CircuitBreakerService,
+  DEFAULT_RATE_LIMITS,
+  RateLimiterService,
+} from '../../../common/guards/rate-limit.guard';
 
 class UpdateShareSettingsDto {
   @IsOptional()
@@ -25,6 +34,11 @@ class UpdateShareSettingsDto {
     allowedOrigins?: string[];
     theme?: string;
   };
+}
+
+class RunSharedAppDto {
+  @IsObject({ message: '输入参数必须是对象' })
+  inputs: Record<string, unknown>;
 }
 
 @Controller('apps')
@@ -87,10 +101,55 @@ export class AppShareController {
  */
 @Controller('share')
 export class AppSharePublicController {
-  constructor(private readonly appShareService: AppShareService) {}
+  constructor(
+    private readonly appShareService: AppShareService,
+    private readonly rateLimiterService: RateLimiterService,
+    private readonly circuitBreakerService: CircuitBreakerService,
+  ) {}
 
   @Get(':shareLink')
   getSharedApp(@Param('shareLink') shareLink: string) {
     return this.appShareService.getSharedApp(shareLink);
+  }
+
+  @Post(':shareLink/run')
+  async runSharedApp(
+    @Param('shareLink') shareLink: string,
+    @Body() dto: RunSharedAppDto,
+    @Req() request: Request,
+  ) {
+    const config = DEFAULT_RATE_LIMITS['workflow:run'];
+    const visitorKey = `rate_limit:share:${shareLink}:${request.ip || 'unknown'}`;
+    const rateLimit = await this.rateLimiterService.checkRateLimit(visitorKey, config);
+    if (!rateLimit.allowed) {
+      throw new HttpException('请求过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const concurrentKey = `concurrent:share:${shareLink}`;
+    const concurrent = await this.rateLimiterService.acquireConcurrent(
+      concurrentKey,
+      config.maxConcurrent || 0,
+    );
+    if (!concurrent.allowed) {
+      throw new HttpException('当前使用人数较多，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const circuitAllowed = await this.circuitBreakerService.isAllowed('workflow');
+    if (!circuitAllowed) {
+      await this.rateLimiterService.releaseConcurrent(concurrentKey);
+      throw new HttpException('应用暂时不可用，请稍后再试', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    try {
+      const result = await this.appShareService.runSharedApp(shareLink, dto.inputs);
+      await this.circuitBreakerService.recordSuccess('workflow');
+      return result;
+    } catch (error) {
+      const status = error instanceof HttpException ? error.getStatus() : 500;
+      if (status >= 500) await this.circuitBreakerService.recordFailure('workflow');
+      throw error;
+    } finally {
+      await this.rateLimiterService.releaseConcurrent(concurrentKey);
+    }
   }
 }

@@ -1,10 +1,68 @@
 import React, { useEffect, useState } from 'react'
-import { Form, Input, Select, Slider, InputNumber, Switch, Divider, Card, Button, Space, Tag, Empty, Typography } from 'antd'
-import { PlusOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
+import { Form, Input, Select, Slider, InputNumber, Switch, Divider, Card, Button, Space, Tag, Empty, Typography, Dropdown } from 'antd'
+import { PlusOutlined, DeleteOutlined, RobotOutlined, BranchesOutlined } from '@ant-design/icons'
 import { useStore } from '../../store'
+import { getUpstreamVariableOptions, type WorkflowVariableOption } from '../../utils/workflowVariables'
 
 const { Option, OptGroup } = Select
 const { Text } = Typography
+
+const getSkillParameterDefinitions = (skill: any): Array<{ name: string; type: string }> => {
+  if (!skill?.inputSchema) return []
+  try {
+    const schema = typeof skill.inputSchema === 'string'
+      ? JSON.parse(skill.inputSchema)
+      : skill.inputSchema
+    const properties = schema?.properties && typeof schema.properties === 'object'
+      ? schema.properties
+      : schema
+    if (!properties || typeof properties !== 'object') return []
+
+    return Object.entries(properties)
+      .filter(([name]) => !['type', 'required', 'properties'].includes(name))
+      .map(([name, definition]: [string, any]) => ({
+        name,
+        type: typeof definition === 'string' ? definition : definition?.type || '任意值',
+      }))
+  } catch {
+    return []
+  }
+}
+
+const VariablePicker: React.FC<{
+  variables: WorkflowVariableOption[]
+  onInsert: (value: string) => void
+}> = ({ variables, onInsert }) => {
+  if (variables.length === 0) {
+    return (
+      <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>
+        请先连接并配置上游节点，之后可在这里选择它的输出。
+      </Text>
+    )
+  }
+
+  return (
+    <Dropdown
+      trigger={['click']}
+      menu={{
+        items: variables.map((variable) => ({
+          key: variable.value,
+          label: (
+            <div>
+              <div>{variable.nodeLabel} → {variable.field}</div>
+              <Text type="secondary" style={{ fontSize: 11 }}>{variable.description} · {variable.value}</Text>
+            </div>
+          ),
+        })),
+        onClick: ({ key }) => onInsert(key),
+      }}
+    >
+      <Button size="small" type="link" style={{ paddingInline: 0, marginTop: 4 }}>
+        插入上游变量
+      </Button>
+    </Dropdown>
+  )
+}
 
 const MODEL_GROUPS = [
   {
@@ -80,9 +138,13 @@ const ModelSelect: React.FC<{
 )
 
 const ConfigPanel: React.FC = () => {
-  const { selectedNode, updateNodeData, knowledgeBases, fetchKnowledgeBases, skills, fetchSkills } = useStore()
+  const { selectedNode, nodes, edges, updateNodeData, knowledgeBases, fetchKnowledgeBases, skills, fetchSkills } = useStore()
   const [form] = Form.useForm()
   const [workers, setWorkers] = useState<any[]>([])
+  const agentMode = Form.useWatch('agentMode', form) || 'single'
+  const upstreamVariables = selectedNode
+    ? getUpstreamVariableOptions(nodes, edges, selectedNode.id)
+    : []
 
   useEffect(() => {
     fetchKnowledgeBases()
@@ -91,20 +153,139 @@ const ConfigPanel: React.FC = () => {
 
   useEffect(() => {
     if (selectedNode) {
+      form.resetFields()
       form.setFieldsValue(selectedNode.data)
-      if (selectedNode.type === 'agent' && (selectedNode.data as any).workers) {
-        setWorkers((selectedNode.data as any).workers || [])
-      }
+      setWorkers(selectedNode.type === 'agent' ? (selectedNode.data as any).workers || [] : [])
     } else {
       form.resetFields()
       setWorkers([])
     }
   }, [selectedNode, form])
 
-  const handleValuesChange = (_changedValues: any, allValues: any) => {
-    if (selectedNode) {
-      updateNodeData(selectedNode.id, allValues)
+  const handleValuesChange = (changedValues: any, allValues: any) => {
+    if (!selectedNode) return
+
+    if (selectedNode.type === 'skill' && changedValues.skillId) {
+      const selectedSkill = skills.find((skill) => skill.id === changedValues.skillId)
+      const parameters = Object.fromEntries(
+        getSkillParameterDefinitions(selectedSkill).map(({ name }) => [name, '']),
+      )
+      updateNodeData(selectedNode.id, { ...allValues, parameters })
+      return
     }
+
+    updateNodeData(selectedNode.id, allValues)
+  }
+
+  const insertVariable = (fieldPath: string | Array<string | number>, variable: string) => {
+    if (!selectedNode) return
+    const current = form.getFieldValue(fieldPath)
+    const prefix = typeof current === 'string' && current.length > 0 && !/\s$/.test(current) ? ' ' : ''
+    form.setFieldValue(fieldPath, `${typeof current === 'string' ? current : ''}${prefix}${variable}`)
+    updateNodeData(selectedNode.id, form.getFieldsValue(true))
+  }
+
+  const renderTemplateTextArea = (
+    fieldName: string,
+    label: string,
+    placeholder: string,
+    rows = 4,
+    required = true,
+  ) => (
+    <Form.Item label={label} required={required}>
+      <Form.Item
+        name={fieldName}
+        noStyle
+        rules={required ? [{ required: true, message: `请填写${label}` }] : undefined}
+      >
+        <Input.TextArea rows={rows} placeholder={placeholder} />
+      </Form.Item>
+      <VariablePicker variables={upstreamVariables} onInsert={(value) => insertVariable(fieldName, value)} />
+    </Form.Item>
+  )
+
+  const updateSkillParameters = (parameters: Record<string, unknown>) => {
+    if (!selectedNode) return
+    updateNodeData(selectedNode.id, { parameters })
+  }
+
+  const renderSkillParameters = () => {
+    if (!selectedNode || selectedNode.type !== 'skill') return null
+    const rawParameters = (selectedNode.data as any).parameters
+    const parameters: Record<string, any> = rawParameters && typeof rawParameters === 'object' && !Array.isArray(rawParameters)
+      ? rawParameters
+      : {}
+    const selectedSkill = skills.find((skill) => skill.id === (selectedNode.data as any).skillId)
+    const definitions = new Map(
+      getSkillParameterDefinitions(selectedSkill).map((definition) => [definition.name, definition.type]),
+    )
+    const entries = Object.entries(parameters)
+
+    return (
+      <>
+        <div style={{ marginBottom: 8 }}>
+          <Text strong>工具参数</Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            选择工具后会自动生成参数。参数值可以直接填写，也可以插入上游变量。
+          </Text>
+        </div>
+        {entries.map(([key, value], index) => (
+          <Card key={`${key}-${index}`} size="small" style={{ marginBottom: 10 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={6}>
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  value={key}
+                  aria-label="参数名"
+                  placeholder="参数名"
+                  onChange={(event) => {
+                    const next = { ...parameters }
+                    delete next[key]
+                    next[event.target.value] = value
+                    updateSkillParameters(next)
+                  }}
+                />
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => {
+                    const next = { ...parameters }
+                    delete next[key]
+                    updateSkillParameters(next)
+                  }}
+                />
+              </Space.Compact>
+              <Input.TextArea
+                value={typeof value === 'string' ? value : JSON.stringify(value)}
+                aria-label={`${key || '未命名'}参数值`}
+                placeholder={definitions.get(key) ? `类型：${definitions.get(key)}` : '参数值'}
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                onChange={(event) => updateSkillParameters({ ...parameters, [key]: event.target.value })}
+              />
+              <VariablePicker
+                variables={upstreamVariables}
+                onInsert={(variable) => updateSkillParameters({
+                  ...parameters,
+                  [key]: `${typeof value === 'string' && value ? `${value} ` : ''}${variable}`,
+                })}
+              />
+            </Space>
+          </Card>
+        ))}
+        <Button
+          type="dashed"
+          block
+          icon={<PlusOutlined />}
+          onClick={() => {
+            let index = 1
+            while (Object.prototype.hasOwnProperty.call(parameters, `param${index}`)) index += 1
+            updateSkillParameters({ ...parameters, [`param${index}`]: '' })
+          }}
+        >
+          添加参数
+        </Button>
+      </>
+    )
   }
 
   const addWorker = () => {
@@ -146,8 +327,6 @@ const ConfigPanel: React.FC = () => {
   }
 
   const renderAgentConfig = (commonFields: React.ReactNode) => {
-    const agentMode = Form.useWatch('agentMode', form) || 'single'
-
     return (
       <>
         {commonFields}
@@ -177,9 +356,7 @@ const ConfigPanel: React.FC = () => {
         <Form.Item name="systemPrompt" label="系统提示词">
           <Input.TextArea rows={4} placeholder="定义 Agent 的角色、能力和行为规范" />
         </Form.Item>
-        <Form.Item name="userPrompt" label="用户提示词" rules={[{ required: true }]}>
-          <Input.TextArea rows={4} placeholder="Agent 的任务输入，可使用 {{变量}} 引用上下文" />
-        </Form.Item>
+        {renderTemplateTextArea('userPrompt', '用户提示词', '输入任务说明，点击下方按钮插入上游变量', 4)}
         <Form.Item name="temperature" label="温度" initialValue={0.7}>
           <Slider min={0} max={1} step={0.1} />
         </Form.Item>
@@ -262,16 +439,68 @@ const ConfigPanel: React.FC = () => {
     }
 
     const commonFields = (
-      <Form.Item name="label" label="节点名称">
-        <Input placeholder="输入节点名称" />
-      </Form.Item>
+      <>
+        <Form.Item name="label" label="节点名称">
+          <Input placeholder="输入节点名称" />
+        </Form.Item>
+        <div style={{ margin: '-12px 0 12px', fontSize: 12 }}>
+          <Text type="secondary">节点标识：</Text>
+          <Text code copyable>{selectedNode.id}</Text>
+        </div>
+      </>
     )
 
     switch (selectedNode.type) {
       case 'start':
-        return <>{commonFields}<Text type="secondary">此节点为工作流的起点。</Text></>
+        return (
+          <>
+            {commonFields}
+            <Text type="secondary">开始节点可以提供后续节点都能引用的固定变量。</Text>
+            <Form.List name="variables">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="baseline" style={{ display: 'flex', marginTop: 10 }}>
+                      <Form.Item
+                        name={[field.name, 'key']}
+                        rules={[
+                          { required: true, message: '请输入变量名' },
+                          { pattern: /^[^.\s]+$/, message: '变量名不能包含点或空格' },
+                        ]}
+                      >
+                        <Input placeholder="变量名，例如 language" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'value']} rules={[{ required: true, message: '请输入变量值' }]}>
+                        <Input placeholder="变量值" />
+                      </Form.Item>
+                      <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                    </Space>
+                  ))}
+                  <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ key: '', value: '' })}>
+                    添加固定变量
+                  </Button>
+                </>
+              )}
+            </Form.List>
+          </>
+        )
       case 'userInput':
-        return <>{commonFields}<Form.Item name="inputField" label="输入字段" rules={[{ required: true }]}><Input placeholder="例如: question" /></Form.Item></>
+        return (
+          <>
+            {commonFields}
+            <Form.Item
+              name="inputField"
+              label="输入字段"
+              extra="调试面板和分享页会用它自动生成输入框；下游节点可从变量选择器引用。"
+              rules={[
+                { required: true, message: '请输入输入字段' },
+                { pattern: /^[^.\s]+$/, message: '输入字段不能包含点或空格' },
+              ]}
+            >
+              <Input placeholder="例如：question" />
+            </Form.Item>
+          </>
+        )
       case 'llm':
         return (
           <>
@@ -280,7 +509,7 @@ const ConfigPanel: React.FC = () => {
               <ModelSelect style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="systemPrompt" label="系统提示词"><Input.TextArea rows={4} placeholder="定义模型的角色和行为" /></Form.Item>
-            <Form.Item name="userPrompt" label="用户提示词" rules={[{ required: true }]}><Input.TextArea rows={6} placeholder="输入用户的问题，可使用 {{变量}} 引用上下文" /></Form.Item>
+            {renderTemplateTextArea('userPrompt', '用户提示词', '输入提示词，点击下方按钮插入用户输入或其他上游输出', 6)}
             <Form.Item name="temperature" label="温度" initialValue={0.7}><Slider min={0} max={1} step={0.1} /></Form.Item>
             <Form.Item name="maxTokens" label="最大 Token 数" initialValue={1024}><InputNumber min={1} max={8192} step={256} style={{ width: '100%' }} /></Form.Item>
           </>
@@ -294,7 +523,7 @@ const ConfigPanel: React.FC = () => {
             <Form.Item name="knowledgeBaseId" label="知识库" rules={[{ required: true }]}>
               <Select placeholder="选择一个知识库">{Array.isArray(knowledgeBases) && knowledgeBases.map(kb => (<Option key={kb.id} value={kb.id}>{kb.name}</Option>))}</Select>
             </Form.Item>
-            <Form.Item name="query" label="检索查询" rules={[{ required: true }]}><Input.TextArea placeholder="输入检索内容，可使用 {{变量}}" /></Form.Item>
+            {renderTemplateTextArea('query', '检索查询', '输入检索内容，或从下方选择上游变量', 3)}
             <Form.Item name="topK" label="Top K" initialValue={5}><Slider min={1} max={10} step={1} /></Form.Item>
           </>
         )
@@ -305,19 +534,90 @@ const ConfigPanel: React.FC = () => {
             <Form.Item name="skillId" label="选择工具" rules={[{ required: true }]}>
               <Select placeholder="选择一个内置或自定义工具">{Array.isArray(skills) && skills.map(s => (<Option key={s.id} value={s.id}>{s.name}</Option>))}</Select>
             </Form.Item>
-            <Form.Item label="工具参数 (JSON)"><Form.Item name="parameters" noStyle><Input.TextArea rows={6} placeholder='{"param1": "value1"}' /></Form.Item></Form.Item>
+            {renderSkillParameters()}
           </>
         )
       case 'condition':
         return (
           <>
             {commonFields}
-            <Text type="secondary">配置分支判断逻辑。</Text>
-            <Form.Item name="conditions" label="判断条件 (JSON)"><Input.TextArea rows={6} placeholder='[{"variable": "{{llm_1.result}}", "operator": "contains", "value": "yes"}]' /></Form.Item>
+            <div style={{ marginBottom: 12, color: 'var(--c-text-secondary)', fontSize: 12 }}>
+              <BranchesOutlined /> 所有条件同时成立时走“是”分支，否则走“否”分支。请从上游输出中选择判断变量。
+            </div>
+            <Form.List name="conditions">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map((field, index) => (
+                    <Card
+                      key={field.key}
+                      size="small"
+                      title={`条件 ${index + 1}`}
+                      extra={
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(field.name)}
+                        />
+                      }
+                      style={{ marginBottom: 10 }}
+                    >
+                      <Form.Item
+                        name={[field.name, 'variable']}
+                        label="变量"
+                        rules={[{ required: true, message: '请输入要判断的变量' }]}
+                      >
+                        <Select
+                          showSearch
+                          placeholder={upstreamVariables.length > 0 ? '选择上游节点的输出' : '请先连接上游节点'}
+                          options={upstreamVariables.map((variable) => ({
+                            value: variable.value,
+                            label: `${variable.nodeLabel} → ${variable.field}`,
+                            title: variable.value,
+                          }))}
+                          notFoundContent="没有可用的上游变量"
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name={[field.name, 'operator']}
+                        label="运算符"
+                        rules={[{ required: true, message: '请选择运算符' }]}
+                      >
+                        <Select options={[
+                          { label: '包含', value: 'contains' },
+                          { label: '等于', value: '===' },
+                          { label: '不等于', value: '!==' },
+                          { label: '大于', value: '>' },
+                          { label: '大于等于', value: '>=' },
+                          { label: '小于', value: '<' },
+                          { label: '小于等于', value: '<=' },
+                        ]} />
+                      </Form.Item>
+                      <Form.Item
+                        name={[field.name, 'value']}
+                        label="比较值"
+                        rules={[{ required: true, message: '请输入比较值' }]}
+                      >
+                        <Input placeholder="例如：不确定" />
+                      </Form.Item>
+                    </Card>
+                  ))}
+                  <Button
+                    type="dashed"
+                    block
+                    icon={<PlusOutlined />}
+                    onClick={() => add({ variable: '', operator: 'contains', value: '' })}
+                  >
+                    添加判断条件
+                  </Button>
+                </>
+              )}
+            </Form.List>
           </>
         )
       case 'output':
-        return <>{commonFields}<Form.Item name="outputValue" label="输出内容" rules={[{ required: true }]}><Input.TextArea rows={4} placeholder="最终输出给用户的内容，支持 {{变量}}" /></Form.Item></>
+        return <>{commonFields}{renderTemplateTextArea('outputValue', '输出内容', '编写最终回复，点击下方按钮插入上游结果', 4)}</>
       default:
         return <Empty description={`暂不支持 ${selectedNode.type} 节点的配置`} />
     }

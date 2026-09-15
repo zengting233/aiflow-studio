@@ -7,6 +7,7 @@ import { ReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from '../../store'
+import { createReadableNodeId } from '../../utils/workflowVariables'
 import StartNode from './nodes/StartNode'
 import UserInputNode from './nodes/UserInputNode'
 import LLMNode from './nodes/LLMNode'
@@ -61,7 +62,10 @@ const createNodeData = (type: NodeType): WorkflowNode['data'] => {
         parameters: {},
       }
     case 'condition':
-      return { label: '条件分支', conditions: [] }
+      return {
+        label: '条件分支',
+        conditions: [{ variable: '', operator: 'contains', value: '' }],
+      }
     case 'output':
       return { label: '输出', outputValue: '' }
     case 'agent':
@@ -125,7 +129,7 @@ const WorkflowCanvas: React.FC = () => {
       })
       
       const newNode: WorkflowNode = {
-        id: `${type}_${Date.now()}`,
+        id: createReadableNodeId(type, nodes),
         type,
         position,
         data: createNodeData(type),

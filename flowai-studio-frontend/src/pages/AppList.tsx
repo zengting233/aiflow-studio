@@ -15,6 +15,7 @@ import {
   FileTextOutlined,
   CheckCircleOutlined,
   WarningOutlined,
+  AppstoreAddOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
@@ -213,6 +214,7 @@ const AppList: React.FC = () => {
           {
             key: 'publish',
             label: '发布',
+            icon:<AppstoreAddOutlined />,
             onClick: async (e: any) => {
               e?.domEvent?.stopPropagation?.()
               try {

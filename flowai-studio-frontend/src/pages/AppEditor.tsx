@@ -21,6 +21,7 @@ import NodePanel from '../components/workflow/NodePanel'
 import ConfigPanel from '../components/workflow/ConfigPanel'
 import RunPanel from '../components/workflow/RunPanel'
 import AppShareSettings from '../components/AppShareSettings'
+import { validateWorkflowForRun } from '../utils/workflowValidation'
 import './AppEditor.css'
 
 type RightPanel = 'config' | 'debug' | 'share'
@@ -91,6 +92,28 @@ const AppEditor: React.FC = () => {
   const handleRun = () => {
     // 切换到调试面板，由 RunPanel 统一管理输入参数和运行
     setRightPanel('debug')
+  }
+
+  const saveForShare = async () => {
+    const workflowId = currentWorkflow?.id
+    if (!workflowId) {
+      message.error('未找到有效的工作流')
+      return false
+    }
+
+    const validationErrors = validateWorkflowForRun(nodes, edges)
+    if (validationErrors.length > 0) {
+      message.error(`暂不能分享：${validationErrors[0]}`)
+      return false
+    }
+
+    try {
+      await saveWorkflow(workflowId, { nodes, edges })
+      return true
+    } catch {
+      message.error('保存工作流失败，请重试')
+      return false
+    }
   }
 
   const handleExport = async (format: 'yaml' | 'json') => {
@@ -229,7 +252,11 @@ const AppEditor: React.FC = () => {
           </div>
           {rightPanel === 'config' ? <ConfigPanel /> : rightPanel === 'debug' ? <RunPanel /> : (
             <div className="editor-share-panel">
-              <AppShareSettings appId={appId!} />
+              <AppShareSettings
+                appId={appId!}
+                initialShareLink={currentApp?.shareLink}
+                saveWorkflowForShare={saveForShare}
+              />
             </div>
           )}
         </div>

@@ -17,6 +17,7 @@ import CostStatistics from '../pages/CostStatistics'
 import RateLimitMonitor from '../pages/RateLimitMonitor'
 import TraceList from '../pages/TraceList'
 import TraceDetail from '../pages/TraceDetail'
+import RouteErrorPage from '../components/RouteErrorPage'
 import { useStore } from '../store'
 
 // 鉴权守卫
@@ -40,7 +41,7 @@ export const router = createBrowserRouter(
       <Route path="/share/:shareLink" element={<SharedApp />} />
       
       {/* 受保护路由 */}
-      <Route element={<RequireAuth><Layout /></RequireAuth>}>
+      <Route element={<RequireAuth><Layout /></RequireAuth>} errorElement={<RouteErrorPage />}>
         <Route path="/" element={<Navigate to="/apps" replace />} />
         <Route path="/apps" element={<AppList />} />
         <Route path="/apps/:appId/editor" element={<AppEditor />} />
