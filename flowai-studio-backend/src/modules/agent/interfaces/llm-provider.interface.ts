@@ -64,6 +64,8 @@ export interface LLMModelInfo {
   isDefault?: boolean;
   /** 排序权重 */
   order?: number;
+  /** 当前后端是否已配置该模型所属 Provider */
+  configured?: boolean;
 }
 
 /** LLM Provider 配置 */
@@ -82,10 +84,18 @@ export interface LLMProviderConfig {
   extra?: Record<string, any>;
 }
 
+/** Provider 间统一的 LLM 消息 */
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+}
+
 /** LLM 聊天参数 */
 export interface LLMChatParams {
   /** 消息列表 */
-  messages: Array<{ role: string; content: string }>;
+  messages: LLMMessage[];
   /** 模型 ID */
   model?: string;
   /** 温度 */

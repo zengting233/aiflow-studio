@@ -27,27 +27,35 @@ export class LLMModelService {
   getModelsGroupByProvider(): Record<string, {
     provider: LLMProviderType;
     description: string;
+    configured: boolean;
     models: LLMModelInfo[];
   }> {
     const providerTypes = this.providerFactory.getRegisteredTypes();
     const result: Record<string, {
       provider: LLMProviderType;
       description: string;
+      configured: boolean;
       models: LLMModelInfo[];
     }> = {};
 
     for (const { type, description } of providerTypes) {
+      const configured = this.providerFactory.isProviderConfigured(type);
       try {
         const provider = this.providerFactory.create(type);
         result[type] = {
           provider: type,
           description,
-          models: provider.supportedModels,
+          configured,
+          models: provider.supportedModels.map((model) => ({
+            ...model,
+            configured,
+          })),
         };
       } catch {
         result[type] = {
           provider: type,
           description,
+          configured,
           models: [],
         };
       }
@@ -60,14 +68,23 @@ export class LLMModelService {
    * 获取所有模型（扁平列表）
    */
   getAllModels(): LLMModelInfo[] {
-    return this.providerFactory.getAllModels();
+    return this.providerFactory.getAllModels().map((model) => ({
+      ...model,
+      configured: this.providerFactory.isProviderConfigured(model.provider),
+    }));
   }
 
   /**
    * 获取指定模型信息
    */
   getModelInfo(modelId: string): LLMModelInfo | undefined {
-    return this.providerFactory.getModelInfo(modelId);
+    const model = this.providerFactory.getModelInfo(modelId);
+    return model
+      ? {
+          ...model,
+          configured: this.providerFactory.isProviderConfigured(model.provider),
+        }
+      : undefined;
   }
 
   /**

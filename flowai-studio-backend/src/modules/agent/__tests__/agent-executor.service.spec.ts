@@ -12,18 +12,11 @@
  * - 多模型路由
  */
 import { AgentExecutorService } from '../services/agent-executor.service';
-import { LLMProviderFactory } from '../providers/llm-provider.factory';
-import { SkillService } from '../../skill/services/skill.service';
-import { RAGService } from '../../rag/services/rag.service';
-import {
-  AgentNodeConfig,
-  LLMResponse,
-} from '../interfaces/agent.interface';
+import { AgentNodeConfig } from '../interfaces/agent.interface';
 
 describe('AgentExecutorService', () => {
   let agentExecutor: AgentExecutorService;
-  let mockProviderFactory: any;
-  let mockProvider: any;
+  let mockInvocationService: any;
   let mockSkillService: any;
   let mockRAGService: any;
   let mockPrismaService: any;
@@ -31,22 +24,8 @@ describe('AgentExecutorService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock LLM Provider
-    mockProvider = {
-      chat: jest.fn(),
-      chatStream: jest.fn(),
-      buildToolDefinitions: jest.fn().mockReturnValue([]),
-      name: 'qwen',
-      defaultModel: 'qwen-turbo',
-      supportedModels: [],
-      healthCheck: jest.fn().mockResolvedValue(true),
-      estimateTokens: jest.fn().mockReturnValue(100),
-    };
-
-    // Mock LLMProviderFactory
-    mockProviderFactory = {
-      getProviderForModel: jest.fn().mockReturnValue(mockProvider),
-      create: jest.fn().mockReturnValue(mockProvider),
+    mockInvocationService = {
+      invoke: jest.fn(),
     };
 
     // Mock SkillService
@@ -71,7 +50,7 @@ describe('AgentExecutorService', () => {
     };
 
     agentExecutor = new AgentExecutorService(
-      mockProviderFactory as any,
+      mockInvocationService as any,
       mockSkillService as any,
       mockRAGService as any,
       mockPrismaService as any,
@@ -104,7 +83,7 @@ describe('AgentExecutorService', () => {
     };
 
     it('should execute a single agent with direct answer', async () => {
-      mockProvider.chat.mockResolvedValue({
+      mockInvocationService.invoke.mockResolvedValue({
         content: '这是最终答案',
         toolCalls: undefined,
       });
@@ -114,19 +93,22 @@ describe('AgentExecutorService', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('这是最终答案');
       expect(result.iterations).toBe(1);
-      expect(mockProviderFactory.getProviderForModel).toHaveBeenCalledWith('qwen-turbo');
+      expect(mockInvocationService.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'qwen-turbo' }),
+        expect.objectContaining({ callType: 'agent' }),
+      );
     });
 
     it('should execute tool calls and return final answer', async () => {
       // 第一次调用返回工具调用
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '',
         toolCalls: [
-          { id: 'call_1', name: '___', arguments: { expression: '1+1' } },
+          { id: 'call_1', name: 'tool_calculator', arguments: { expression: '1+1' } },
         ],
       });
       // 第二次调用返回最终答案
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '1+1=2',
         toolCalls: undefined,
       });
@@ -138,13 +120,31 @@ describe('AgentExecutorService', () => {
       expect(result.success).toBe(true);
       expect(result.toolCallCount).toBe(1);
       expect(result.iterations).toBe(2);
+      expect(mockInvocationService.invoke).toHaveBeenCalledTimes(2);
+      expect(mockSkillService.executeSkill).toHaveBeenCalledWith(
+        'calculator',
+        { expression: '1+1' },
+      );
+
+      const secondRoundMessages = mockInvocationService.invoke.mock.calls[1][0].messages;
+      expect(secondRoundMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            toolCalls: [
+              expect.objectContaining({ id: 'call_1', name: 'tool_calculator' }),
+            ],
+          }),
+          expect.objectContaining({ role: 'tool', toolCallId: 'call_1' }),
+        ]),
+      );
     });
 
     it('should stop at max iterations', async () => {
-      mockProvider.chat.mockResolvedValue({
+      mockInvocationService.invoke.mockResolvedValue({
         content: '',
         toolCalls: [
-          { id: 'call_1', name: '___', arguments: { expression: 'loop' } },
+          { id: 'call_1', name: 'tool_calculator', arguments: { expression: 'loop' } },
         ],
       });
 
@@ -158,7 +158,7 @@ describe('AgentExecutorService', () => {
     });
 
     it('should produce execution trace', async () => {
-      mockProvider.chat.mockResolvedValue({
+      mockInvocationService.invoke.mockResolvedValue({
         content: '答案',
         toolCalls: undefined,
       });
@@ -206,19 +206,19 @@ describe('AgentExecutorService', () => {
 
     it('should delegate to worker and return final answer', async () => {
       // Supervisor 委派给 Worker
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '',
         toolCalls: [
           { id: 'call_1', name: 'delegate_to_worker_1', arguments: { task: '搜索信息' } },
         ],
       });
       // Worker 返回答案
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '搜索结果: XXX',
         toolCalls: undefined,
       });
       // Supervisor 给出最终答案
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '',
         toolCalls: [
           { id: 'call_2', name: 'finish', arguments: { answer: '最终答案' } },
@@ -229,6 +229,12 @@ describe('AgentExecutorService', () => {
 
       expect(result.success).toBe(true);
       expect(result.result).toBe('最终答案');
+      expect(mockInvocationService.invoke).toHaveBeenCalledTimes(3);
+      expect(mockInvocationService.invoke.mock.calls[2][0].messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'tool', toolCallId: 'call_1' }),
+        ]),
+      );
     });
   });
 
@@ -263,7 +269,7 @@ describe('AgentExecutorService', () => {
         { content: '知识库内容2', score: 0.85, metadata: {} },
       ]);
 
-      mockProvider.chat.mockResolvedValue({
+      mockInvocationService.invoke.mockResolvedValue({
         content: '基于知识库的回答',
         toolCalls: undefined,
       });
@@ -277,7 +283,7 @@ describe('AgentExecutorService', () => {
     it('should handle RAG retrieval failure gracefully', async () => {
       mockRAGService.retrieve.mockRejectedValue(new Error('知识库不存在'));
 
-      mockProvider.chat.mockResolvedValue({
+      mockInvocationService.invoke.mockResolvedValue({
         content: '无法获取知识库信息',
         toolCalls: undefined,
       });
@@ -300,7 +306,7 @@ describe('AgentExecutorService', () => {
 
   describe('Error Handling', () => {
     it('should handle LLM API failure', async () => {
-      mockProvider.chat.mockRejectedValue(new Error('API 限流'));
+      mockInvocationService.invoke.mockRejectedValue(new Error('API 限流'));
 
       const config: AgentNodeConfig = {
         mode: 'single',
@@ -329,16 +335,16 @@ describe('AgentExecutorService', () => {
     });
 
     it('should handle tool execution failure', async () => {
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '',
         toolCalls: [
-          { id: 'call_1', name: '___', arguments: { expression: 'bad' } },
+          { id: 'call_1', name: 'tool_calculator', arguments: { expression: 'bad' } },
         ],
       });
 
       mockSkillService.executeSkill.mockRejectedValue(new Error('工具执行失败'));
 
-      mockProvider.chat.mockResolvedValueOnce({
+      mockInvocationService.invoke.mockResolvedValueOnce({
         content: '工具调用失败了',
         toolCalls: undefined,
       });
@@ -371,21 +377,15 @@ describe('AgentExecutorService', () => {
   });
 
   // ============================================================
-  // 多模型路由
+  // 统一模型调用
   // ============================================================
 
-  describe('Multi-Model Routing', () => {
-    it('should route to correct provider based on model ID', async () => {
-      const openaiProvider = {
-        ...mockProvider,
-        name: 'openai',
-        chat: jest.fn().mockResolvedValue({
-          content: 'GPT-4o 回答',
-          toolCalls: undefined,
-        }),
-      };
-
-      mockProviderFactory.getProviderForModel.mockReturnValue(openaiProvider);
+  describe('Unified LLM invocation', () => {
+    it('should pass the selected model to the invocation service', async () => {
+      mockInvocationService.invoke.mockResolvedValue({
+        content: 'GPT-4o 回答',
+        toolCalls: undefined,
+      });
 
       const config: AgentNodeConfig = {
         mode: 'single',
@@ -409,8 +409,10 @@ describe('AgentExecutorService', () => {
 
       const result = await agentExecutor.execute(config, '你好');
 
-      expect(mockProviderFactory.getProviderForModel).toHaveBeenCalledWith('gpt-4o');
-      expect(openaiProvider.chat).toHaveBeenCalled();
+      expect(mockInvocationService.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-4o' }),
+        expect.objectContaining({ callType: 'agent' }),
+      );
       expect(result.success).toBe(true);
     });
   });

@@ -163,6 +163,27 @@ export class LLMProviderFactory {
   }
 
   /**
+   * 仅根据后端配置判断 Provider 是否已配置，不发起网络请求。
+   */
+  isProviderConfigured(providerType: LLMProviderType): boolean {
+    const configKeys: Record<LLMProviderType, string> = {
+      openai: 'OPENAI_API_KEY',
+      claude: 'ANTHROPIC_API_KEY',
+      gemini: 'GOOGLE_API_KEY',
+      qwen: 'QWEN_API_KEY',
+      ollama: 'OLLAMA_BASE_URL',
+    };
+    const value = this.configService
+      .get<string>(configKeys[providerType])
+      ?.trim();
+    if (!value) return false;
+
+    return !/^(your[-_]|replace[-_]|change[-_]?me|example\b|x{3,})/i.test(
+      value,
+    );
+  }
+
+  /**
    * 获取所有可用模型（所有 Provider 的合并列表）
    */
   getAllModels(): LLMModelInfo[] {

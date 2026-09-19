@@ -16,6 +16,7 @@ import {
   LLMResponse,
   ToolDefinition,
 } from '../interfaces/llm-provider.interface';
+import { buildToolDefinitions } from '../utils/tool-definition.util';
 
 export abstract class BaseLLMProvider implements ILLMProvider {
   protected readonly logger: Logger;
@@ -57,31 +58,7 @@ export abstract class BaseLLMProvider implements ILLMProvider {
     description: string;
     inputSchema?: any;
   }>): ToolDefinition[] {
-    return skills.map((skill, index) => ({
-      name: this.sanitizeToolName(skill.name) || `tool_${index}`,
-      description: skill.description,
-      parameters: skill.inputSchema
-        ? typeof skill.inputSchema === 'string'
-          ? JSON.parse(skill.inputSchema)
-          : skill.inputSchema
-        : {
-            type: 'object' as const,
-            properties: {
-              input: { type: 'string', description: 'Input for the tool' },
-            },
-          },
-    }));
-  }
-
-  /**
-   * 工具名称清理：只允许字母数字下划线
-   * 中文字符替换为下划线，多个连续下划线合并
-   */
-  protected sanitizeToolName(name: string): string {
-    return name
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '');
+    return buildToolDefinitions(skills);
   }
 
   /**
@@ -108,10 +85,29 @@ export abstract class BaseLLMProvider implements ILLMProvider {
 
     const body: Record<string, any> = {
       model,
-      messages: params.messages.map((m) => ({
-        role: m.role === 'supervisor' ? 'assistant' : m.role,
-        content: m.content,
-      })),
+      messages: params.messages.map((message) => {
+        const mapped: Record<string, any> = {
+          role: message.role,
+          content: message.content,
+        };
+
+        if (message.toolCalls?.length) {
+          mapped.tool_calls = message.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            type: 'function',
+            function: {
+              name: toolCall.name,
+              arguments: JSON.stringify(toolCall.arguments),
+            },
+          }));
+        }
+
+        if (message.toolCallId) {
+          mapped.tool_call_id = message.toolCallId;
+        }
+
+        return mapped;
+      }),
       temperature: params.temperature ?? 0.7,
       max_tokens: params.maxTokens ?? modelInfo?.capabilities.maxOutputTokens ?? 2048,
     };

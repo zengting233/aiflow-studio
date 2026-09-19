@@ -17,7 +17,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SkillService } from '../../skill/services/skill.service';
 import { RAGService } from '../../rag/services/rag.service';
 import { PrismaService } from '../../../common/services/prisma.service';
-import { LLMProviderFactory } from '../providers/llm-provider.factory';
+import { LLMInvocationService } from './llm-invocation.service';
 import {
   AgentNodeConfig,
   AgentState,
@@ -30,14 +30,18 @@ import {
   AgentRunOptions,
   ToolDefinition,
 } from '../interfaces/agent.interface';
-import { LLMChatParams } from '../interfaces/llm-provider.interface';
+import { LLMMessage } from '../interfaces/llm-provider.interface';
+import {
+  buildToolDefinitions,
+  normalizeToolName,
+} from '../utils/tool-definition.util';
 
 @Injectable()
 export class AgentExecutorService {
   private readonly logger = new Logger(AgentExecutorService.name);
 
   constructor(
-    private readonly providerFactory: LLMProviderFactory,
+    private readonly llmInvocationService: LLMInvocationService,
     private readonly skillService: SkillService,
     private readonly ragService: RAGService,
     private readonly prisma: PrismaService,
@@ -151,9 +155,6 @@ export class AgentExecutorService {
       await this.enrichWithRAG(state, agentConfig.knowledgeBaseIds, input);
     }
 
-    // 获取对应模型的 Provider
-    const provider = this.providerFactory.getProviderForModel(agentConfig.model);
-
     // ReAct 循环
     while (state.iteration < maxIterations && !state.finished) {
       state.iteration++;
@@ -175,17 +176,16 @@ export class AgentExecutorService {
         },
       });
 
-      // 调用 LLM（通过 Factory 自动路由）
-      const llmResponse = await provider.chat({
-        messages: state.messages.map((m) => ({
-          role: m.role === 'supervisor' ? 'assistant' : m.role,
-          content: m.content,
-        })),
-        model: agentConfig.model,
-        temperature: agentConfig.temperature,
-        maxTokens: agentConfig.maxTokens,
-        tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-      });
+      const llmResponse = await this.llmInvocationService.invoke(
+        {
+          messages: this.toLLMMessages(state.messages),
+          model: agentConfig.model,
+          temperature: agentConfig.temperature,
+          maxTokens: agentConfig.maxTokens,
+          tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+        },
+        this.getInvocationContext(options),
+      );
 
       // 如果有工具调用 → 执行工具
       if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
@@ -211,6 +211,7 @@ export class AgentExecutorService {
           state.messages.push({
             role: 'tool',
             content: JSON.stringify(toolResult.result),
+            toolCallId: toolCall.id,
             agentId: agentConfig.id,
             timestamp: Date.now(),
           });
@@ -397,9 +398,6 @@ export class AgentExecutorService {
       },
     });
 
-    // 获取 Supervisor 模型的 Provider
-    const supervisorProvider = this.providerFactory.getProviderForModel(supervisorConfig.model);
-
     // ReAct 循环（Supervisor 视角）
     while (state.iteration < maxIterations && !state.finished) {
       state.iteration++;
@@ -418,16 +416,15 @@ export class AgentExecutorService {
         },
       });
 
-      // 调用 Supervisor LLM
-      const supervisorResponse = await supervisorProvider.chat({
-        messages: state.messages.map((m) => ({
-          role: m.role === 'supervisor' ? 'assistant' : m.role,
-          content: m.content,
-        })),
-        model: supervisorConfig.model,
-        temperature: supervisorConfig.temperature,
-        tools: delegateTools,
-      });
+      const supervisorResponse = await this.llmInvocationService.invoke(
+        {
+          messages: this.toLLMMessages(state.messages),
+          model: supervisorConfig.model,
+          temperature: supervisorConfig.temperature,
+          tools: delegateTools,
+        },
+        this.getInvocationContext(options),
+      );
 
       if (
         supervisorResponse.toolCalls &&
@@ -493,6 +490,7 @@ export class AgentExecutorService {
             state.messages.push({
               role: 'tool',
               content: `[${workerInfo.config.name} 的结果]: ${workerResult.result}`,
+              toolCallId: toolCall.id,
               agentId: workerId,
               timestamp: Date.now(),
             });
@@ -519,6 +517,7 @@ export class AgentExecutorService {
             state.messages.push({
               role: 'tool',
               content: `错误: 未找到 ID 为 ${workerId} 的 Worker`,
+              toolCallId: toolCall.id,
               timestamp: Date.now(),
             });
           }
@@ -610,23 +609,20 @@ export class AgentExecutorService {
       await this.enrichWithRAG(state, workerConfig.knowledgeBaseIds, task);
     }
 
-    // 获取 Worker 模型的 Provider
-    const provider = this.providerFactory.getProviderForModel(workerConfig.model);
-
     // ReAct 循环
     while (state.iteration < maxIterations && !state.finished) {
       state.iteration++;
 
-      const llmResponse = await provider.chat({
-        messages: state.messages.map((m) => ({
-          role: m.role === 'supervisor' ? 'assistant' : m.role,
-          content: m.content,
-        })),
-        model: workerConfig.model,
-        temperature: workerConfig.temperature,
-        maxTokens: workerConfig.maxTokens,
-        tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-      });
+      const llmResponse = await this.llmInvocationService.invoke(
+        {
+          messages: this.toLLMMessages(state.messages),
+          model: workerConfig.model,
+          temperature: workerConfig.temperature,
+          maxTokens: workerConfig.maxTokens,
+          tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+        },
+        this.getInvocationContext(options),
+      );
 
       if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
         state.messages.push({
@@ -648,6 +644,7 @@ export class AgentExecutorService {
           state.messages.push({
             role: 'tool',
             content: JSON.stringify(toolResult.result),
+            toolCallId: toolCall.id,
             agentId: workerConfig.id,
             timestamp: Date.now(),
           });
@@ -747,23 +744,41 @@ export class AgentExecutorService {
   ): Map<string, { id: string; name: string }> {
     const map = new Map<string, { id: string; name: string }>();
     for (const tool of tools) {
-      // 使用处理后的名称作为 key（去除特殊字符）
-      const sanitizedName = tool.name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-      map.set(sanitizedName, { id: tool.id, name: tool.name });
+      map.set(normalizeToolName(tool.name, tool.id), {
+        id: tool.id,
+        name: tool.name,
+      });
     }
     return map;
   }
 
   /**
-   * 构建工具定义（通过 Provider）
+   * 构建 Provider-independent 工具定义
    */
   private buildToolDefinitions(
     tools: Array<{ id: string; name: string; description: string; inputSchema: any }>,
   ): ToolDefinition[] {
-    // 使用 Qwen Provider 的 buildToolDefinitions 作为默认（OpenAI 兼容格式）
-    // 因为所有 Provider 都兼容此格式或内部转换
-    const qwenProvider = this.providerFactory.create('qwen');
-    return qwenProvider.buildToolDefinitions(tools);
+    return buildToolDefinitions(tools);
+  }
+
+  private toLLMMessages(messages: AgentMessage[]): LLMMessage[] {
+    return messages.map((message) => ({
+      role: message.role === 'supervisor' ? 'assistant' : message.role,
+      content: message.content,
+      ...(message.toolCalls ? { toolCalls: message.toolCalls } : {}),
+      ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+    }));
+  }
+
+  private getInvocationContext(options?: AgentRunOptions) {
+    const context = options?.context;
+    return {
+      userId: context?._userId as string | undefined,
+      applicationId: context?._applicationId as string | undefined,
+      workflowId: context?._workflowId as string | undefined,
+      executionId: context?._executionId as string | undefined,
+      callType: 'agent' as const,
+    };
   }
 
   /**

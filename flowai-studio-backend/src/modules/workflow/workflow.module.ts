@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowVersionController } from './controllers/workflow-version.controller';
 import { WorkflowTemplateController } from './controllers/workflow-template.controller';
@@ -22,12 +22,11 @@ import { AgentNodeExecutor } from './services/node-executors/agent-node.executor
 import { PrismaModule } from '../../common/modules/prisma.module';
 import { RAGModule } from '../rag/rag.module';
 import { SkillModule } from '../skill/skill.module';
-import { AiModule } from '../ai/ai.module';
 import { AgentModule } from '../agent/agent.module';
 import { RateLimiterService, CircuitBreakerService } from '../../common/guards/rate-limit.guard';
 
 @Module({
-  imports: [PrismaModule, RAGModule, SkillModule, forwardRef(() => AiModule), AgentModule],
+  imports: [PrismaModule, RAGModule, SkillModule, AgentModule],
   controllers: [WorkflowController, WorkflowVersionController, WorkflowTemplateController, WorkflowDslController, WorkflowTraceController],
   providers: [
     RateLimiterService,
@@ -48,6 +47,6 @@ import { RateLimiterService, CircuitBreakerService } from '../../common/guards/r
     OutputNodeExecutor,
     AgentNodeExecutor,
   ],
-  exports: [WorkflowExecutorService, RateLimiterService, CircuitBreakerService],
+  exports: [WorkflowService, WorkflowExecutorService, RateLimiterService, CircuitBreakerService],
 })
 export class WorkflowModule {}

@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Response } from 'express';
+import { Subject } from 'rxjs';
 import { PrismaService } from '../../common/services/prisma.service';
 import { CacheService } from '../../common/services/cache.service';
 import { CacheTTL, CachePrefix } from '../../common/decorators/cache.decorator';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
+import type { RunDto, StreamRunDto } from '../ai/dto/ai.dto';
+import { WorkflowExecutorService } from './services/workflow-executor.service';
 
 /**
  * Workflow Service — 工作流管理服务
@@ -24,7 +28,76 @@ export class WorkflowService {
   constructor(
     private prisma: PrismaService,
     private cacheService: CacheService,
+    private workflowExecutor: WorkflowExecutorService,
   ) {}
+
+  async run(userId: string, runDto: RunDto) {
+    const workflowId = await this.resolveWorkflowId(
+      userId,
+      runDto.appId,
+      runDto.workflowId,
+    );
+    const result = await this.workflowExecutor.executeWorkflow(workflowId, {
+      inputs: runDto.inputs as Record<string, any>,
+      sessionId: runDto.sessionId,
+      userId,
+    });
+
+    return {
+      success: true,
+      message: 'Workflow execution completed',
+      data: { output: result, context: result },
+    };
+  }
+
+  async streamRun(
+    userId: string,
+    streamRunDto: StreamRunDto,
+    res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+      const workflowId = await this.resolveWorkflowId(
+        userId,
+        streamRunDto.appId,
+        streamRunDto.workflowId,
+      );
+      const sseSubject = new Subject<any>();
+
+      sseSubject.subscribe({
+        next: (event) => res.write(`data: ${JSON.stringify(event)}\n\n`),
+        complete: () => res.end(),
+        error: (error) => {
+          res.write(
+            `data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`,
+          );
+          res.end();
+        },
+      });
+
+      await this.workflowExecutor.executeWorkflow(
+        workflowId,
+        {
+          inputs: streamRunDto.inputs as Record<string, any>,
+          sessionId: streamRunDto.sessionId,
+          userId,
+        },
+        sseSubject,
+      );
+      sseSubject.complete();
+    } catch (error) {
+      res.write(
+        `data: ${JSON.stringify({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        })}\n\n`,
+      );
+      res.end();
+    }
+  }
 
   private serializeWorkflow<T extends { nodes: string; edges: string; variables?: string | null }>(
     workflow: T,
@@ -244,5 +317,35 @@ export class WorkflowService {
       this.cacheService.delete(`${CachePrefix.WORKFLOW}:detail:${workflowId}`),
       this.cacheService.deleteByPrefix(`${CachePrefix.WORKFLOW}:list:${applicationId}`),
     ]);
+  }
+
+  private async resolveWorkflowId(
+    userId: string,
+    appId: string,
+    workflowId?: string,
+  ): Promise<string> {
+    if (workflowId) return workflowId;
+
+    const app = await this.prisma.application.findUnique({
+      where: { id: appId },
+    });
+    if (!app) throw new NotFoundException('Application not found');
+    if (app.userId !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to run this application',
+      );
+    }
+
+    const workflow = await this.prisma.workflow.findFirst({
+      where: { applicationId: appId },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    });
+    if (!workflow) {
+      throw new NotFoundException(
+        'No workflow found for this application. Please create a workflow first.',
+      );
+    }
+    return workflow.id;
   }
 }

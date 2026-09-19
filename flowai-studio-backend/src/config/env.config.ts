@@ -19,11 +19,23 @@ export const envSchema = z.object({
   QWEN_EMBEDDING_MODEL: z.string().default('text-embedding-v3'),
   QWEN_EMBEDDING_DIMENSION: z.coerce.number().default(1024),
 
-  // OpenAI Embedding 配置
+  // OpenAI LLM / Embedding 配置
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
+  OPENAI_ORGANIZATION: z.string().optional(),
   OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   OPENAI_EMBEDDING_DIMENSION: z.coerce.number().default(1536),
+
+  // Anthropic Claude LLM 配置
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().default('https://api.anthropic.com'),
+  ANTHROPIC_VERSION: z.string().default('2023-06-01'),
+
+  // Google Gemini LLM 配置
+  GOOGLE_API_KEY: z.string().optional(),
+  GEMINI_BASE_URL: z.string().default(
+    'https://generativelanguage.googleapis.com/v1beta',
+  ),
 
   // Ollama 本地模型配置
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),

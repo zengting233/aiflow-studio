@@ -115,6 +115,8 @@ export interface AgentMessage {
   agentId?: string;
   /** 工具调用信息 */
   toolCalls?: ToolCall[];
+  /** 对应的工具调用 ID（tool 消息使用） */
+  toolCallId?: string;
   /** 时间戳 */
   timestamp: number;
 }
@@ -205,7 +207,12 @@ export interface ILLMProvider {
   name: string;
   /** 调用 LLM */
   chat(params: {
-    messages: Array<{ role: string; content: string }>;
+    messages: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string;
+      toolCalls?: ToolCall[];
+      toolCallId?: string;
+    }>;
     model?: string;
     temperature?: number;
     maxTokens?: number;

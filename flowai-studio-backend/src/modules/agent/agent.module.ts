@@ -17,6 +17,7 @@ import { Module } from '@nestjs/common';
 import { AgentExecutorService } from './services/agent-executor.service';
 import { LLMModelService } from './services/llm-model.service';
 import { TokenUsageService } from './services/token-usage.service';
+import { LLMInvocationService } from './services/llm-invocation.service';
 import { LLMProviderFactory } from './providers/llm-provider.factory';
 import { LLMModelController } from './controllers/llm-model.controller';
 import { TokenUsageController } from './controllers/token-usage.controller';
@@ -27,7 +28,7 @@ import { PrismaModule } from '../../common/modules/prisma.module';
 @Module({
   imports: [SkillModule, RAGModule, PrismaModule],
   controllers: [LLMModelController, TokenUsageController],
-  providers: [AgentExecutorService, LLMModelService, LLMProviderFactory, TokenUsageService],
-  exports: [AgentExecutorService, LLMModelService, LLMProviderFactory, TokenUsageService],
+  providers: [AgentExecutorService, LLMModelService, LLMProviderFactory, TokenUsageService, LLMInvocationService],
+  exports: [AgentExecutorService, LLMModelService, LLMProviderFactory, TokenUsageService, LLMInvocationService],
 })
 export class AgentModule {}

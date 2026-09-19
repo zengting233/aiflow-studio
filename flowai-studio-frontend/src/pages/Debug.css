@@ -303,6 +303,25 @@
   gap: 8px;
 }
 
+.debug-chat-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.debug-chat-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-chat-option-label {
+  color: var(--c-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .debug-input-row {
   display: flex;
   gap: 8px;

@@ -9,14 +9,18 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { AiService } from './ai.service';
+import { ChatService } from './chat.service';
+import { WorkflowService } from '../workflow/workflow.service';
 import { StreamRunDto, RunDto, ChatDto } from './dto/ai.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('ai')
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly workflowService: WorkflowService,
+    private readonly chatService: ChatService,
+  ) {}
 
   @Post('run')
   @UseGuards(JwtAuthGuard)
@@ -24,7 +28,7 @@ export class AiController {
     @CurrentUser('userId') userId: string,
     @Body() runDto: RunDto,
   ) {
-    return this.aiService.run(userId, runDto);
+    return this.workflowService.run(userId, runDto);
   }
 
   @Post('stream-run')
@@ -34,7 +38,7 @@ export class AiController {
     @Body() streamRunDto: StreamRunDto,
     @Res() res: Response,
   ) {
-    await this.aiService.streamRun(userId, streamRunDto, res);
+    await this.workflowService.streamRun(userId, streamRunDto, res);
   }
 
   @Post('chat')
@@ -44,7 +48,7 @@ export class AiController {
     @Body() chatDto: ChatDto,
     @Res() res: Response,
   ) {
-    await this.aiService.chat(userId, chatDto, res);
+    await this.chatService.chat(userId, chatDto, res);
   }
 
   @Get('chat-histories/:sessionId')
@@ -53,7 +57,7 @@ export class AiController {
     @CurrentUser('userId') userId: string,
     @Param('sessionId') sessionId: string,
   ) {
-    return this.aiService.getChatHistory(userId, sessionId);
+    return this.chatService.getChatHistory(userId, sessionId);
   }
 
   @Get('chat-histories')
@@ -62,6 +66,6 @@ export class AiController {
     @CurrentUser('userId') userId: string,
     @Query('appId') appId?: string,
   ) {
-    return this.aiService.getAllChatHistories(userId, appId);
+    return this.chatService.getAllChatHistories(userId, appId);
   }
 }

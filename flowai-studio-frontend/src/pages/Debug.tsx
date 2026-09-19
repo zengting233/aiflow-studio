@@ -17,11 +17,12 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { useStore } from '../store'
 import request from '../utils/axios'
+import { fetchLLMModelGroups, type LLMModelGroup } from '../utils/llmModelApi'
 import { createParser } from 'eventsource-parser'
 import './Debug.css'
 
 const { Text, Paragraph } = Typography
-const { Option } = Select
+const { Option, OptGroup } = Select
 
 interface ChatMessage {
   id: string
@@ -55,6 +56,10 @@ const Debug: React.FC = () => {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>('')
   const [workflows, setWorkflows] = useState<any[]>([])
   const [selectedKbId, setSelectedKbId] = useState<string>('')
+  const [modelGroups, setModelGroups] = useState<LLMModelGroup[]>([])
+  const [selectedModel, setSelectedModel] = useState<string>('')
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [modelsLoadFailed, setModelsLoadFailed] = useState(false)
   const [workflowInputsText, setWorkflowInputsText] = useState('{}')
   const [requiredInputFields, setRequiredInputFields] = useState<string[]>([])
   const [workflowResult, setWorkflowResult] = useState<any>(null)
@@ -70,6 +75,31 @@ const Debug: React.FC = () => {
     fetchApps()
     fetchKnowledgeBases()
   }, [fetchApps, fetchKnowledgeBases])
+
+  useEffect(() => {
+    let active = true
+    fetchLLMModelGroups()
+      .then((groups) => {
+        if (!active) return
+        setModelGroups(groups)
+        const configuredModels = groups
+          .filter((group) => group.configured)
+          .flatMap((group) => group.models)
+        const defaultModel = configuredModels.find((model) => model.isDefault)
+          ?? configuredModels[0]
+        setSelectedModel((current) => current || defaultModel?.id || '')
+      })
+      .catch(() => {
+        if (active) setModelsLoadFailed(true)
+      })
+      .finally(() => {
+        if (active) setModelsLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -132,6 +162,10 @@ const Debug: React.FC = () => {
   const handleSendMessage = async () => {
     const trimmed = input.trim()
     if (!trimmed || isStreaming) return
+    if (!selectedModel) {
+      message.error(modelsLoadFailed ? '模型列表加载失败' : '请选择已配置的模型')
+      return
+    }
 
     // 立即清空输入框并设置流式状态
     const currentInput = trimmed
@@ -162,6 +196,7 @@ const Debug: React.FC = () => {
         },
         body: JSON.stringify({
           message: currentInput,
+          model: selectedModel,
           history: messages.map(msg => ({ role: msg.role, content: msg.content })),
           ...(selectedKbId ? { knowledgeBaseId: selectedKbId } : {}),
         }),
@@ -507,18 +542,53 @@ const Debug: React.FC = () => {
 
           {/* 输入区域 */}
           <div className="debug-input-area">
-            <Select
-              placeholder="关联知识库（可选）"
-              allowClear
-              value={selectedKbId || undefined}
-              onChange={setSelectedKbId}
-              style={{ width: 200 }}
-              size="small"
-            >
-              {Array.isArray(knowledgeBases) && knowledgeBases.map(kb => (
-                <Option key={kb.id} value={kb.id}>{kb.name}</Option>
-              ))}
-            </Select>
+            <div className="debug-chat-options">
+              <label className="debug-chat-option">
+                <span className="debug-chat-option-label">知识库</span>
+                <Select
+                  placeholder="关联知识库（可选）"
+                  allowClear
+                  value={selectedKbId || undefined}
+                  onChange={setSelectedKbId}
+                  style={{ width: 200 }}
+                  size="small"
+                >
+                  {Array.isArray(knowledgeBases) && knowledgeBases.map(kb => (
+                    <Option key={kb.id} value={kb.id}>{kb.name}</Option>
+                  ))}
+                </Select>
+              </label>
+              <label className="debug-chat-option">
+                <span className="debug-chat-option-label">模型</span>
+                <Select
+                  placeholder={modelsLoadFailed ? '模型列表加载失败' : '选择模型'}
+                  value={selectedModel || undefined}
+                  onChange={setSelectedModel}
+                  loading={modelsLoading}
+                  status={modelsLoadFailed ? 'error' : undefined}
+                  notFoundContent={modelsLoadFailed ? '模型列表加载失败' : '没有可用模型'}
+                  style={{ width: 240 }}
+                  size="small"
+                >
+                  {modelGroups.map((group) => (
+                    <OptGroup
+                      key={group.provider}
+                      label={`${group.provider.toUpperCase()} · ${group.configured ? '已配置' : '未配置'}`}
+                    >
+                      {group.models.map((model) => (
+                        <Option
+                          key={model.id}
+                          value={model.id}
+                          disabled={!group.configured}
+                        >
+                          {model.displayName}
+                        </Option>
+                      ))}
+                    </OptGroup>
+                  ))}
+                </Select>
+              </label>
+            </div>
             <div className="debug-input-row">
               <Input.TextArea
                 value={input}
@@ -541,7 +611,7 @@ const Debug: React.FC = () => {
                 icon={<SendOutlined />}
                 onClick={handleSendMessage}
                 loading={isStreaming}
-                disabled={!input.trim()}
+                disabled={!input.trim() || !selectedModel}
                 className="debug-send-btn"
               >
                 发送

@@ -3,6 +3,7 @@ import { Form, Input, Select, Slider, InputNumber, Switch, Divider, Card, Button
 import { PlusOutlined, DeleteOutlined, RobotOutlined, BranchesOutlined } from '@ant-design/icons'
 import { useStore } from '../../store'
 import { getUpstreamVariableOptions, type WorkflowVariableOption } from '../../utils/workflowVariables'
+import { fetchLLMModelGroups, type LLMModelGroup } from '../../utils/llmModelApi'
 import './ConfigPanel.css'
 
 const { Option, OptGroup } = Select
@@ -65,83 +66,67 @@ const VariablePicker: React.FC<{
   )
 }
 
-const MODEL_GROUPS = [
-  {
-    provider: 'qwen',
-    label: '🇨🇳 通义千问 (Qwen)',
-    models: [
-      { id: 'qwen-turbo', name: 'Qwen Turbo', tag: '快速', tagColor: 'green' },
-      { id: 'qwen-plus', name: 'Qwen Plus', tag: '高质量', tagColor: 'blue' },
-      { id: 'qwen-max', name: 'Qwen Max', tag: '最强', tagColor: 'purple' },
-      { id: 'qwen-long', name: 'Qwen Long', tag: '长文本', tagColor: 'orange' },
-    ],
-  },
-  {
-    provider: 'openai',
-    label: '🌐 OpenAI',
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o', tag: '推荐', tagColor: 'gold' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', tag: '性价比', tagColor: 'green' },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', tag: '强大', tagColor: 'purple' },
-      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', tag: '经济', tagColor: 'default' },
-    ],
-  },
-  {
-    provider: 'claude',
-    label: '🤖 Anthropic Claude',
-    models: [
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', tag: '推荐', tagColor: 'gold' },
-      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', tag: '最强', tagColor: 'purple' },
-      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', tag: '快速', tagColor: 'green' },
-    ],
-  },
-  {
-    provider: 'gemini',
-    label: '✨ Google Gemini',
-    models: [
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', tag: '100万上下文', tagColor: 'blue' },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', tag: '快速', tagColor: 'green' },
-      { id: 'gemini-1.0-pro', name: 'Gemini 1.0 Pro', tag: '稳定', tagColor: 'default' },
-    ],
-  },
-  {
-    provider: 'ollama',
-    label: '🏠 Ollama (本地)',
-    models: [
-      { id: 'qwen2.5:7b', name: 'Qwen2.5 7B', tag: '本地', tagColor: 'cyan' },
-      { id: 'llama3.1:8b', name: 'Llama 3.1 8B', tag: '本地', tagColor: 'cyan' },
-      { id: 'mistral:7b', name: 'Mistral 7B', tag: '本地', tagColor: 'cyan' },
-      { id: 'deepseek-coder-v2:16b', name: 'DeepSeek Coder V2 16B', tag: '本地', tagColor: 'cyan' },
-    ],
-  },
-]
-
 const ModelSelect: React.FC<{
   value?: string;
   onChange?: (value: string) => void;
   style?: React.CSSProperties;
   size?: 'small' | 'middle' | 'large';
-}> = ({ value, onChange, style, size }) => (
-  <Select value={value} onChange={onChange} style={style} size={size} placeholder="选择模型" showSearch optionFilterProp="label">
-    {MODEL_GROUPS.map((group) => (
-      <OptGroup key={group.provider} label={group.label}>
+  groups: LLMModelGroup[];
+  loading: boolean;
+  loadFailed: boolean;
+}> = ({ value, onChange, style, size, groups, loading, loadFailed }) => {
+  const hasCurrentValue = groups.some((group) =>
+    group.models.some((model) => model.id === value),
+  )
+
+  return (
+  <Select
+    value={value}
+    onChange={onChange}
+    style={style}
+    size={size}
+    placeholder={loadFailed ? '模型列表加载失败' : '选择模型'}
+    showSearch
+    optionFilterProp="label"
+    loading={loading}
+    status={loadFailed ? 'error' : undefined}
+    notFoundContent={loadFailed ? '模型列表加载失败' : '没有模型'}
+  >
+    {value && !hasCurrentValue && (
+      <Option value={value} label={value} disabled>{value}（当前不可用）</Option>
+    )}
+    {groups.map((group) => (
+      <OptGroup
+        key={group.provider}
+        label={(
+          <Space>
+            <span>{group.provider.toUpperCase()}</span>
+            <Tag color={group.configured ? 'green' : undefined}>
+              {group.configured ? '已配置' : '未配置'}
+            </Tag>
+          </Space>
+        )}
+      >
         {group.models.map((model) => (
-          <Option key={model.id} value={model.id} label={model.name}>
+          <Option key={model.id} value={model.id} label={model.displayName} disabled={!group.configured}>
             <Space>
-              <span>{model.name}</span>
-              <Tag color={model.tagColor} style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{model.tag}</Tag>
+              <span>{model.displayName}</span>
             </Space>
           </Option>
         ))}
       </OptGroup>
     ))}
   </Select>
-)
+  )
+}
 
 const ConfigPanel: React.FC = () => {
   const { selectedNode, nodes, edges, updateNodeData, knowledgeBases, fetchKnowledgeBases, skills, fetchSkills } = useStore()
   const [form] = Form.useForm()
   const [workers, setWorkers] = useState<any[]>([])
+  const [modelGroups, setModelGroups] = useState<LLMModelGroup[]>([])
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [modelsLoadFailed, setModelsLoadFailed] = useState(false)
   const initializedNodeIdRef = useRef<string | null>(null)
   const agentMode = Form.useWatch('agentMode', form) || 'single'
   const upstreamVariables = selectedNode
@@ -152,6 +137,23 @@ const ConfigPanel: React.FC = () => {
     fetchKnowledgeBases()
     fetchSkills()
   }, [fetchKnowledgeBases, fetchSkills])
+
+  useEffect(() => {
+    let active = true
+    fetchLLMModelGroups()
+      .then((groups) => {
+        if (active) setModelGroups(groups)
+      })
+      .catch(() => {
+        if (active) setModelsLoadFailed(true)
+      })
+      .finally(() => {
+        if (active) setModelsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     const nextNodeId = selectedNode?.id ?? null
@@ -357,7 +359,7 @@ const ConfigPanel: React.FC = () => {
           </Select>
         </Form.Item>
         <Form.Item name="model" label="模型" initialValue="qwen-turbo">
-          <ModelSelect style={{ width: '100%' }} />
+          <ModelSelect groups={modelGroups} loading={modelsLoading} loadFailed={modelsLoadFailed} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="systemPrompt" label="系统提示词">
           <Input.TextArea rows={4} placeholder="定义 Agent 的角色、能力和行为规范" />
@@ -405,7 +407,7 @@ const ConfigPanel: React.FC = () => {
               <Input.TextArea rows={4} placeholder="定义 Supervisor 的协调策略，留空使用默认" />
             </Form.Item>
             <Form.Item name="supervisorModel" label="Supervisor 模型" initialValue="qwen-plus">
-              <ModelSelect style={{ width: '100%' }} />
+              <ModelSelect groups={modelGroups} loading={modelsLoading} loadFailed={modelsLoadFailed} style={{ width: '100%' }} />
             </Form.Item>
             <Divider orientation="left" style={{ margin: '12px 0 12px' }}>🤖 Workers ({workers.length})</Divider>
             {workers.map((worker, index) => (
@@ -425,7 +427,7 @@ const ConfigPanel: React.FC = () => {
                   <Input value={worker.description} onChange={(e) => updateWorker(index, 'description', e.target.value)} placeholder="Worker 职责描述" size="small" />
                   <Input.TextArea value={worker.systemPrompt} onChange={(e) => updateWorker(index, 'systemPrompt', e.target.value)} placeholder="Worker 系统提示词" rows={2} style={{ fontSize: 12 }} />
                   <Space>
-                    <ModelSelect value={worker.model} onChange={(v) => updateWorker(index, 'model', v)} size="small" style={{ width: 180 }} />
+                    <ModelSelect groups={modelGroups} loading={modelsLoading} loadFailed={modelsLoadFailed} value={worker.model} onChange={(v) => updateWorker(index, 'model', v)} size="small" style={{ width: 180 }} />
                     <Text type="secondary" style={{ fontSize: 11 }}>温度:</Text>
                     <InputNumber value={worker.temperature} onChange={(v) => updateWorker(index, 'temperature', v)} min={0} max={1} step={0.1} size="small" style={{ width: 60 }} />
                   </Space>
@@ -512,7 +514,7 @@ const ConfigPanel: React.FC = () => {
           <>
             {commonFields}
             <Form.Item name="model" label="模型" initialValue="qwen-turbo">
-              <ModelSelect style={{ width: '100%' }} />
+              <ModelSelect groups={modelGroups} loading={modelsLoading} loadFailed={modelsLoadFailed} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="systemPrompt" label="系统提示词"><Input.TextArea rows={4} placeholder="定义模型的角色和行为" /></Form.Item>
             {renderTemplateTextArea('userPrompt', '用户提示词', '输入提示词，点击下方按钮插入用户输入或其他上游输出', 6)}

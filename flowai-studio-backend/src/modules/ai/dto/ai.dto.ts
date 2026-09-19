@@ -23,6 +23,10 @@ export class ChatDto {
   message: string;
 
   @IsOptional()
+  @IsString({ message: 'Model must be a string' })
+  model?: string;
+
+  @IsOptional()
   @IsArray({ message: 'History must be an array' })
   history?: Array<{
     role: 'user' | 'assistant' | 'system';

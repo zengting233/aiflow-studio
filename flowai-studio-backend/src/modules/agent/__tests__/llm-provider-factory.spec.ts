@@ -94,6 +94,26 @@ describe('LLMProviderFactory', () => {
   });
 
   describe('Model List', () => {
+    it('reports configured providers from backend configuration only', () => {
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'QWEN_API_KEY' ? 'test-qwen-key' : '',
+      );
+
+      expect(factory.isProviderConfigured('qwen')).toBe(true);
+      expect(factory.isProviderConfigured('openai')).toBe(false);
+      expect(factory.isProviderConfigured('claude')).toBe(false);
+      expect(factory.isProviderConfigured('gemini')).toBe(false);
+      expect(factory.isProviderConfigured('ollama')).toBe(false);
+    });
+
+    it('does not treat example API keys as configured', () => {
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'OPENAI_API_KEY' ? 'your-openai-api-key-here' : '',
+      );
+
+      expect(factory.isProviderConfigured('openai')).toBe(false);
+    });
+
     it('should return all models from all providers', () => {
       const models = factory.getAllModels();
       expect(models.length).toBeGreaterThan(10); // 5 providers each have 3-5 models
