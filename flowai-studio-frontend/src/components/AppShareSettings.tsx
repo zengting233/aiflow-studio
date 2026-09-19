@@ -225,6 +225,7 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId, initialShare
                   label: '嵌入设置',
                   children: (
                     <Form
+                      className="embed-settings-form"
                       layout="vertical"
                       onFinish={handleUpdateEmbed}
                       initialValues={{
@@ -234,15 +235,15 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId, initialShare
                         showHeader: shareInfo.embedConfig?.showHeader ?? true,
                       }}
                     >
-                      <Space size="large" wrap>
+                      <div className="embed-settings-grid">
                         <Form.Item name="width" label="宽度">
-                          <Input placeholder="100%" style={{ width: 120 }} />
+                          <Input placeholder="100%" />
                         </Form.Item>
                         <Form.Item name="height" label="高度">
-                          <Input placeholder="600px" style={{ width: 120 }} />
+                          <Input placeholder="600px" />
                         </Form.Item>
                         <Form.Item name="theme" label="主题">
-                          <Select style={{ width: 120 }} options={[
+                          <Select options={[
                             { label: '自动', value: 'auto' },
                             { label: '浅色', value: 'light' },
                             { label: '深色', value: 'dark' },
@@ -251,8 +252,8 @@ const AppShareSettings: React.FC<AppShareSettingsProps> = ({ appId, initialShare
                         <Form.Item name="showHeader" label="显示标题" valuePropName="checked">
                           <Switch />
                         </Form.Item>
-                      </Space>
-                      <Button type="primary" htmlType="submit">
+                      </div>
+                      <Button type="primary" htmlType="submit" size="small">
                         保存设置
                       </Button>
                     </Form>

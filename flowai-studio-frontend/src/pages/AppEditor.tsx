@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Button, message, Tag, Tooltip, Dropdown } from 'antd'
+import { Button, message, Tag, Tooltip, Dropdown, Select } from 'antd'
 import {
   SaveOutlined,
   PlayCircleOutlined,
@@ -33,6 +33,7 @@ const AppEditor: React.FC = () => {
     currentApp,
     fetchAppById,
     currentWorkflow,
+    workflows,
     fetchWorkflows,
     fetchWorkflowById,
     createWorkflow,
@@ -92,6 +93,19 @@ const AppEditor: React.FC = () => {
   const handleRun = () => {
     // 切换到调试面板，由 RunPanel 统一管理输入参数和运行
     setRightPanel('debug')
+  }
+
+  const handleWorkflowChange = async (workflowId: string) => {
+    if (!workflowId || workflowId === currentWorkflow?.id) return
+    try {
+      if (currentWorkflow?.id) {
+        await saveWorkflow(currentWorkflow.id, { nodes, edges })
+      }
+      await fetchWorkflowById(workflowId)
+      message.success('已切换工作流')
+    } catch {
+      message.error('切换工作流失败')
+    }
   }
 
   const saveForShare = async () => {
@@ -168,6 +182,15 @@ const AppEditor: React.FC = () => {
               <AppstoreOutlined />
             </span>
             <span className="editor-app-name">{currentApp?.name || '应用编辑器'}</span>
+            <Select
+              className="editor-workflow-select"
+              size="small"
+              value={currentWorkflow?.id}
+              options={workflows.map((workflow) => ({ value: workflow.id, label: workflow.name }))}
+              onChange={handleWorkflowChange}
+              loading={isLoading}
+              placeholder="选择工作流"
+            />
             {tag && <Tag color={tag.color}>{tag.label}</Tag>}
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { INodeExecutor } from '../../types';
 import { SkillService } from '../../../skill/services/skill.service';
+import { resolveTemplate } from '../../utils/workflow-context.util';
 
 @Injectable()
 export class SkillNodeExecutor implements INodeExecutor {
@@ -24,26 +25,11 @@ export class SkillNodeExecutor implements INodeExecutor {
     for (const key in params) {
       const value = params[key];
       if (typeof value === 'string') {
-        resolvedParams[key] = this.resolveVariables(value, context);
+        resolvedParams[key] = resolveTemplate(value, context);
       } else {
         resolvedParams[key] = value;
       }
     }
     return resolvedParams;
-  }
-
-  private resolveVariables(template: string, context: Record<string, any>): string {
-    return template.replace(/\{\{(.+?)\}\}/g, (match, p1) => {
-      const keys = p1.trim().split('.');
-      let value = context;
-      for (const key of keys) {
-        if (value && typeof value === 'object' && key in value) {
-          value = value[key];
-        } else {
-          return match;
-        }
-      }
-      return typeof value === 'object' ? JSON.stringify(value) : String(value);
-    });
   }
 }

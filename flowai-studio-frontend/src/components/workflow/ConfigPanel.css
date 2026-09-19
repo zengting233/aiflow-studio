@@ -2,9 +2,10 @@
    ConfigPanel — Right-side node configuration
    ============================================================ */
 .config-panel {
-  width: 300px;
+  width: var(--editor-right-panel-width, 320px);
   height: 100%;
-  background: var(--c-bg-card);
+  box-sizing: border-box;
+  background: #fff;
   border-left: 1px solid var(--c-border);
   display: flex;
   flex-direction: column;
@@ -28,8 +29,28 @@
 
 .config-panel-body {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   padding: 16px;
+  background: #fff;
+}
+
+.config-panel-form {
+  width: 100%;
+  min-width: 0;
+  background: #fff;
+}
+
+.config-panel-form .ant-form-item,
+.config-panel-form .ant-form-item-control,
+.config-panel-form .ant-form-item-control-input,
+.config-panel-form .ant-form-item-control-input-content {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Empty state */

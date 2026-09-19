@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { INodeExecutor } from '../../types';
+import { resolveContextValue } from '../../utils/workflow-context.util';
 
 @Injectable()
 export class ConditionNodeExecutor implements INodeExecutor {
@@ -11,7 +12,7 @@ export class ConditionNodeExecutor implements INodeExecutor {
     if (conditions && Array.isArray(conditions)) {
       for (const condition of conditions) {
         const { variable, operator, value } = condition;
-        const contextValue = this.resolveVariable(variable, context);
+        const contextValue = resolveContextValue(variable, context);
         if (!this.evaluate(contextValue, operator, value)) {
           result = false;
           break;
@@ -21,21 +22,6 @@ export class ConditionNodeExecutor implements INodeExecutor {
 
     return { result };
   }
-
-  private resolveVariable(template: string, context: Record<string, any>): any {
-    if (!template) return undefined;
-    const keys = template.replace(/\{\{|\}\}/g, '').trim().split('.');
-    let value = context;
-    for (const key of keys) {
-      if (value && typeof value === 'object' && key in value) {
-        value = value[key];
-      } else {
-        return undefined;
-      }
-    }
-    return value;
-  }
-
   private evaluate(contextValue: any, operator: string, value: any): boolean {
     switch (operator) {
       case '===':

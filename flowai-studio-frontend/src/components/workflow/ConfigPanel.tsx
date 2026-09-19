@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Form, Input, Select, Slider, InputNumber, Switch, Divider, Card, Button, Space, Tag, Empty, Typography, Dropdown } from 'antd'
 import { PlusOutlined, DeleteOutlined, RobotOutlined, BranchesOutlined } from '@ant-design/icons'
 import { useStore } from '../../store'
 import { getUpstreamVariableOptions, type WorkflowVariableOption } from '../../utils/workflowVariables'
+import './ConfigPanel.css'
 
 const { Option, OptGroup } = Select
 const { Text } = Typography
@@ -141,6 +142,7 @@ const ConfigPanel: React.FC = () => {
   const { selectedNode, nodes, edges, updateNodeData, knowledgeBases, fetchKnowledgeBases, skills, fetchSkills } = useStore()
   const [form] = Form.useForm()
   const [workers, setWorkers] = useState<any[]>([])
+  const initializedNodeIdRef = useRef<string | null>(null)
   const agentMode = Form.useWatch('agentMode', form) || 'single'
   const upstreamVariables = selectedNode
     ? getUpstreamVariableOptions(nodes, edges, selectedNode.id)
@@ -152,6 +154,10 @@ const ConfigPanel: React.FC = () => {
   }, [fetchKnowledgeBases, fetchSkills])
 
   useEffect(() => {
+    const nextNodeId = selectedNode?.id ?? null
+    if (initializedNodeIdRef.current === nextNodeId) return
+    initializedNodeIdRef.current = nextNodeId
+
     if (selectedNode) {
       form.resetFields()
       form.setFieldsValue(selectedNode.data)
@@ -408,8 +414,8 @@ const ConfigPanel: React.FC = () => {
                 size="small"
                 title={
                   <Space>
-                    <Tag color="purple">Worker {index + 1}</Tag>
-                    <Input value={worker.name} onChange={(e) => updateWorker(index, 'name', e.target.value)} placeholder="Worker 名称" style={{ width: 120 }} size="small" />
+                    <Tag color="purple">#{index + 1}</Tag>
+                    <Input value={worker.name} onChange={(e) => updateWorker(index, 'name', e.target.value)} placeholder="Worker 名称" aria-label={`Worker ${index + 1} 名称`} style={{ width: 140 }} size="small" />
                   </Space>
                 }
                 extra={<Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeWorker(index)} />}
@@ -525,6 +531,14 @@ const ConfigPanel: React.FC = () => {
             </Form.Item>
             {renderTemplateTextArea('query', '检索查询', '输入检索内容，或从下方选择上游变量', 3)}
             <Form.Item name="topK" label="Top K" initialValue={5}><Slider min={1} max={10} step={1} /></Form.Item>
+            <Form.Item
+              name="similarityThreshold"
+              label="相似度阈值"
+              initialValue={0.7}
+              extra="只保留相似度达到该值的检索结果。"
+            >
+              <Slider min={0} max={1} step={0.05} marks={{ 0: '0', 0.5: '0.5', 1: '1' }} />
+            </Form.Item>
           </>
         )
       case 'skill':
@@ -629,7 +643,7 @@ const ConfigPanel: React.FC = () => {
         <h3>{selectedNode ? '节点配置' : '配置'}</h3>
       </div>
       <div className="config-panel-body">
-        <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
+        <Form className="config-panel-form" form={form} layout="vertical" onValuesChange={handleValuesChange}>
           {renderConfigForm()}
         </Form>
       </div>

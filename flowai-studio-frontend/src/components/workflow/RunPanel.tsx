@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Empty, message } from 'antd'
 import {
   PlayCircleOutlined,
@@ -27,12 +27,14 @@ const RunPanel: React.FC = () => {
     streamRunWorkflow,
     saveWorkflow,
     setExecutionStatus,
+    setExecutionStates,
     clearExecutionStates,
   } = useStore()
 
   const inputFields = useMemo(() => getWorkflowInputFields(nodes), [nodes])
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [isRunning, setIsRunning] = useState(false)
+  const runAbortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setInputs((current) => Object.fromEntries(
@@ -57,18 +59,33 @@ const RunPanel: React.FC = () => {
     }
 
     setIsRunning(true)
+    const abortController = new AbortController()
+    runAbortControllerRef.current = abortController
     try {
       // 调试运行始终使用当前画布，并顺便持久化，避免刷新后回到旧版本。
       await saveWorkflow(workflowId, { nodes, edges })
-      await streamRunWorkflow(workflowId, inputs)
+      if (abortController.signal.aborted) return
+      await streamRunWorkflow(workflowId, inputs, abortController.signal)
     } catch (error: any) {
       message.error(error?.message || '工作流执行失败')
     } finally {
+      if (runAbortControllerRef.current === abortController) {
+        runAbortControllerRef.current = null
+      }
       setIsRunning(false)
     }
   }
 
   const handleStop = () => {
+    runAbortControllerRef.current?.abort()
+    setExecutionStates(Object.fromEntries(
+      Object.entries(executionStates).map(([nodeId, nodeState]) => [
+        nodeId,
+        nodeState.status === 'running' || nodeState.status === 'retrying'
+          ? { ...nodeState, status: 'stopped' as const }
+          : nodeState,
+      ]),
+    ))
     setIsRunning(false)
     setExecutionStatus('stopped')
   }
@@ -86,6 +103,9 @@ const RunPanel: React.FC = () => {
         return <CheckCircleOutlined style={{ color: 'var(--c-green)' }} />
       case 'failed':
         return <CloseCircleOutlined style={{ color: 'var(--c-red)' }} />
+      case 'cancelled':
+      case 'stopped':
+        return <StopOutlined style={{ color: 'var(--c-text-tertiary)' }} />
       case 'skipped':
         return <MinusCircleOutlined style={{ color: 'var(--c-text-tertiary)' }} />
       default:

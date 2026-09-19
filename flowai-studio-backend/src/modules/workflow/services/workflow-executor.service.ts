@@ -56,8 +56,8 @@ export class WorkflowExecutorService {
 
     // 注册取消标记
     const execId = executionId || `${workflowId}_${Date.now()}`;
+    const executionStartedAt = Date.now();
     const cancelToken = { cancelled: false };
-    this.cancelTokens.set(execId, cancelToken);
 
     const nodes = JSON.parse(workflow.nodes) as any[];
     const edges = JSON.parse(workflow.edges) as any[];
@@ -79,6 +79,17 @@ export class WorkflowExecutorService {
       }
       inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
     }
+
+    // TokenUsageRecord.executionId 是外键，必须先创建对应执行记录。
+    await this.prisma.workflowExecution.create({
+      data: {
+        id: execId,
+        workflowId,
+        status: 'running',
+        inputs: JSON.stringify(runDto.inputs || {}),
+      },
+    });
+    this.cancelTokens.set(execId, cancelToken);
 
     // Start Trace (全链路追踪)
     let traceId: string | undefined;
@@ -242,6 +253,12 @@ export class WorkflowExecutorService {
             },
           );
 
+          // 客户端停止时，当前节点可能仍在等待外部请求返回。
+          // 返回后再次检查，避免写入结果、调度后续节点或发送完成事件。
+          if (cancelToken.cancelled) {
+            throw new CancelledError('Workflow execution was cancelled');
+          }
+
           const nodeDuration = Date.now() - nodeStartTime;
 
           context[nodeId] = output;
@@ -317,7 +334,7 @@ export class WorkflowExecutorService {
             type: 'node_status',
             data: {
               nodeId,
-              status: isTimeout ? 'timeout' : 'failed',
+              status: isTimeout ? 'timeout' : isCancelled ? 'cancelled' : 'failed',
               error: error.message,
             },
           });
@@ -366,6 +383,8 @@ export class WorkflowExecutorService {
         }
       }
 
+      await this.finishExecution(execId, 'success', executionStartedAt, context);
+
       sseSubject?.next({
         type: 'done',
         data: {
@@ -388,11 +407,24 @@ export class WorkflowExecutorService {
       // End Trace - 失败
       if (this.tracingService && traceId) {
         try {
-          await this.tracingService.endTrace(traceId, 'failed', undefined, error.message);
+          await this.tracingService.endTrace(
+            traceId,
+            isCancelled ? 'cancelled' : 'failed',
+            undefined,
+            error.message,
+          );
         } catch (e) {
           this.logger.warn(`Failed to end trace on failure: ${e instanceof Error ? e.message : 'Unknown'}`);
         }
       }
+
+      await this.finishExecution(
+        execId,
+        isCancelled ? 'cancelled' : 'failed',
+        executionStartedAt,
+        undefined,
+        error.message,
+      );
 
       sseSubject?.next({
         type: 'error',
@@ -415,6 +447,31 @@ export class WorkflowExecutorService {
     } finally {
       heartbeat.stop();
       this.cancelTokens.delete(execId);
+    }
+  }
+
+  private async finishExecution(
+    executionId: string,
+    status: 'success' | 'failed' | 'cancelled',
+    startedAt: number,
+    context?: Record<string, any>,
+    error?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: {
+          status,
+          context: context ? JSON.stringify(context) : undefined,
+          error,
+          duration: Date.now() - startedAt,
+          completedAt: new Date(),
+        },
+      });
+    } catch (updateError) {
+      this.logger.error(
+        `Failed to persist workflow execution ${executionId}: ${updateError instanceof Error ? updateError.message : updateError}`,
+      );
     }
   }
 

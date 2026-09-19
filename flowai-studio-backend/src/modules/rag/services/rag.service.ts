@@ -471,6 +471,7 @@ export class RAGService {
     retrievalModeOverride?: 'vector' | 'keyword' | 'hybrid',
     vectorWeightOverride?: number,
     rrfKOverride?: number,
+    similarityThresholdOverride?: number,
   ): Promise<any[]> {
     // 1. 获取知识库配置
     const kb = await this.prisma.knowledgeBase.findUnique({ where: { id: knowledgeBaseId } });
@@ -479,13 +480,16 @@ export class RAGService {
     }
 
     const effectiveTopK = topK || kb.topK || 5;
+    const effectiveKb = similarityThresholdOverride === undefined
+      ? kb
+      : { ...kb, similarityThreshold: similarityThresholdOverride };
     // 运行时参数优先于知识库配置
     const retrievalMode = retrievalModeOverride || (kb as any).retrievalMode || 'vector';
     const vectorWeight = vectorWeightOverride ?? (kb as any).vectorWeight ?? 0.7;
     const rrfK = rrfKOverride ?? (kb as any).rrfK ?? 60;
 
     // 2. 构建检索缓存键
-    const cacheKey = `${CachePrefix.KNOWLEDGE_BASE_RETRIEVAL}:${knowledgeBaseId}:${this.hashQuery(query)}:${retrievalMode}:${effectiveTopK}`;
+    const cacheKey = `${CachePrefix.KNOWLEDGE_BASE_RETRIEVAL}:${knowledgeBaseId}:${this.hashQuery(query)}:${retrievalMode}:${effectiveTopK}:${effectiveKb.similarityThreshold}`;
 
     // 3. 尝试命中缓存
     const cachedResults = await this.cacheService.get<any>(cacheKey);
@@ -498,19 +502,27 @@ export class RAGService {
     let results: any[];
     switch (retrievalMode) {
       case 'keyword':
-        results = await this.retrieveKeyword(query, knowledgeBaseId, effectiveTopK, kb);
+        results = await this.retrieveKeyword(query, knowledgeBaseId, effectiveTopK, effectiveKb);
         break;
       case 'hybrid':
-        results = await this.retrieveHybrid(query, knowledgeBaseId, effectiveTopK, kb, vectorWeight, rrfK);
+        results = await this.retrieveHybrid(query, knowledgeBaseId, effectiveTopK, effectiveKb, vectorWeight, rrfK);
         break;
       case 'vector':
       default:
-        results = await this.retrieveVector(query, knowledgeBaseId, effectiveTopK, kb);
+        results = await this.retrieveVector(query, knowledgeBaseId, effectiveTopK, effectiveKb);
         break;
     }
 
     // 5. Reranker 重排序（如知识库启用）
-    results = await this.applyReranker(query, results, kb, effectiveTopK);
+    results = await this.applyReranker(query, results, effectiveKb, effectiveTopK);
+
+    // 工作流节点可以覆盖知识库默认阈值；关键词检索也在这里统一执行过滤。
+    if (similarityThresholdOverride !== undefined) {
+      results = results.filter((result) => {
+        const similarity = Number(result?.similarity);
+        return !Number.isFinite(similarity) || similarity >= similarityThresholdOverride;
+      });
+    }
 
     // 6. 写入检索缓存（短 TTL，因为检索结果随文档增删变化）
     await this.cacheService.set(cacheKey, results, CacheTTL.KNOWLEDGE_BASE_RETRIEVAL);

@@ -130,6 +130,8 @@ export class LLMProviderFactory {
 
   /**
    * 根据 model ID 自动路由到对应 Provider
+   * 根据model id创建对应的provider实例
+   * model id-> type(modelroutemap)->创建实例(create(type))
    *
    * 例如: gpt-4o → openai, claude-3-5-sonnet → claude
    */
@@ -287,6 +289,7 @@ export class LLMProviderFactory {
 
   /**
    * 构建模型路由表
+   * 先获取类型实例，通过实例获取所有支持模型，根据支持模型id构建映射
    * 为每个 Provider 的每个模型建立 model ID → provider type 的映射
    */
   private buildModelRouteMap(): void {

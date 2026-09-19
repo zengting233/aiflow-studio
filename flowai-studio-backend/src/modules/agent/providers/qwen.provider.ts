@@ -13,6 +13,7 @@
  * - 本设计: Qwen 全系列 + DashScope 兼容 OpenAI 格式
  */
 import axios from 'axios';
+import { parseOpenAICompatibleStream } from './openai-compatible-stream.util';
 import {
   LLMChatParams,
   LLMResponse,
@@ -138,26 +139,7 @@ export class QwenProvider extends BaseLLMProvider {
       },
     );
 
-    let buffer = '';
-    for await (const chunk of response.data) {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (!trimmed.startsWith('data: ')) continue;
-
-        try {
-          const data = JSON.parse(trimmed.slice(6));
-          const content = data.choices[0]?.delta?.content || '';
-          if (content) yield content;
-        } catch {
-          // 忽略解析错误
-        }
-      }
-    }
+    yield* parseOpenAICompatibleStream(response.data);
   }
 
   async healthCheck(): Promise<boolean> {

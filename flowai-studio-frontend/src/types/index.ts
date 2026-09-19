@@ -307,7 +307,16 @@ export interface Skill {
 }
 
 // 节点执行状态
-export type NodeExecutionStatus = 'pending' | 'running' | 'success' | 'failed'
+export type NodeExecutionStatus =
+  | 'pending'
+  | 'running'
+  | 'retrying'
+  | 'success'
+  | 'failed'
+  | 'skipped'
+  | 'timeout'
+  | 'cancelled'
+  | 'stopped'
 
 export interface NodeExecution {
   nodeId: string

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { INodeExecutor } from '../../types';
 import { AiService } from '../../../ai/ai.service';
 import { TokenUsageService } from '../../../agent/services/token-usage.service';
+import { resolveTemplate } from '../../utils/workflow-context.util';
 
 @Injectable()
 export class LLMNodeExecutor implements INodeExecutor {
@@ -15,7 +16,7 @@ export class LLMNodeExecutor implements INodeExecutor {
     const { model, systemPrompt, userPrompt, temperature, maxTokens } = nodeData;
 
     // 替换上下文变量
-    const resolvedUserPrompt = this.resolveVariables(userPrompt, context);
+    const resolvedUserPrompt = resolveTemplate(userPrompt, context);
 
     // 使用增强版 chatWithLLMAndUsage 获取 usage 信息
     const { content, usage } = await this.aiService.chatWithLLMAndUsage(
@@ -58,20 +59,5 @@ export class LLMNodeExecutor implements INodeExecutor {
     if (model.startsWith('gemini-')) return 'gemini';
     if (model.startsWith('qwen-')) return 'qwen';
     return 'unknown';
-  }
-
-  private resolveVariables(template: string, context: Record<string, any>): string {
-    return template.replace(/\{\{(.+?)\}\}/g, (match, p1) => {
-      const keys = p1.trim().split('.');
-      let value = context;
-      for (const key of keys) {
-        if (value && typeof value === 'object' && key in value) {
-          value = value[key];
-        } else {
-          return match;
-        }
-      }
-      return typeof value === 'object' ? JSON.stringify(value) : String(value);
-    });
   }
 }

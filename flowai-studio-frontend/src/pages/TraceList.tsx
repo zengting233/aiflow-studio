@@ -38,12 +38,13 @@ const TraceList: React.FC = () => {
   const [slowTraces, setSlowTraces] = useState<SlowTrace[]>([])
   const [stats, setStats] = useState<TraceStats | null>(null)
   const [workflowIdFilter, setWorkflowIdFilter] = useState('')
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 })
 
   const loadData = async () => {
     setLoading(true)
     try {
       const [tracesData, statsData] = await Promise.all([
-        getSlowTraces(workflowIdFilter || undefined, 50),
+        getSlowTraces(workflowIdFilter || undefined, 100),
         getTraceStats(workflowIdFilter || undefined),
       ])
       setSlowTraces(tracesData)
@@ -202,7 +203,16 @@ const TraceList: React.FC = () => {
               dataSource={slowTraces}
               rowKey="traceId"
               size="small"
-              pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
+              pagination={{
+                ...pagination,
+                pageSizeOptions: [10, 20, 50, 100],
+                showSizeChanger: true,
+                showTotal: (t) => `共 ${t} 条`,
+              }}
+              onChange={(nextPagination) => setPagination({
+                current: nextPagination.current || 1,
+                pageSize: nextPagination.pageSize || 20,
+              })}
               scroll={{ x: 1100 }}
             />
           </Card>

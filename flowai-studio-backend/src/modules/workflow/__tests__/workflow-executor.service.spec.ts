@@ -42,6 +42,10 @@ describe('WorkflowExecutorService', () => {
       workflow: {
         findUnique: jest.fn(),
       },
+      workflowExecution: {
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
 
     service = new WorkflowExecutorService(mockPrisma, mockFactory);
@@ -69,6 +73,18 @@ describe('WorkflowExecutorService', () => {
       const result = await service.executeWorkflow('wf_1', { inputs: {} });
 
       expect(mockExecutor.execute).toHaveBeenCalledTimes(3);
+      expect(mockPrisma.workflowExecution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          workflowId: 'wf_1',
+          status: 'running',
+        }),
+      });
+      expect(mockPrisma.workflowExecution.create.mock.invocationCallOrder[0])
+        .toBeLessThan(mockExecutor.execute.mock.invocationCallOrder[0]);
+      expect(mockPrisma.workflowExecution.update).toHaveBeenCalledWith({
+        where: { id: expect.any(String) },
+        data: expect.objectContaining({ status: 'success' }),
+      });
       expect(result.start).toEqual({ result: 'ok' });
       expect(result.llm).toEqual({ result: 'ok' });
       expect(result.output).toEqual({ result: 'ok' });
@@ -383,6 +399,36 @@ describe('WorkflowExecutorService', () => {
           executionId,
         ),
       ).rejects.toThrow(/cancelled/i);
+    });
+
+    it('should not complete when cancellation happens during the final node', async () => {
+      mockPrisma.workflow.findUnique.mockResolvedValue(
+        buildWorkflow([{ id: 'a', type: 'llm', data: {} }], []),
+      );
+
+      const executionId = 'wf_1_cancel_final_node';
+      const events: any[] = [];
+      const subject = new Subject<any>();
+      subject.subscribe((event) => events.push(event));
+      mockExecutor.execute.mockImplementation(async () => {
+        service.cancelExecution(executionId);
+        return { result: 'late result' };
+      });
+
+      await expect(
+        service.executeWorkflow(
+          'wf_1',
+          { inputs: {}, control: { heartbeatIntervalMs: 0 } },
+          subject,
+          executionId,
+        ),
+      ).rejects.toThrow(/cancelled/i);
+
+      expect(events.some((event) => event.type === 'done')).toBe(false);
+      expect(mockPrisma.workflowExecution.update).toHaveBeenCalledWith({
+        where: { id: executionId },
+        data: expect.objectContaining({ status: 'cancelled' }),
+      });
     });
 
     it('should return false when cancelling non-existent execution', () => {

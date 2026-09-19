@@ -16,6 +16,7 @@ import {
   AgentNodeConfig,
   AgentRunOptions,
 } from '../../../agent/interfaces/agent.interface';
+import { resolveTemplate } from '../../utils/workflow-context.util';
 
 @Injectable()
 export class AgentNodeExecutor implements INodeExecutor {
@@ -27,7 +28,7 @@ export class AgentNodeExecutor implements INodeExecutor {
   ): Promise<Record<string, any>> {
     const nodeData = node.data as any;
     const config = this.buildAgentConfig(nodeData);
-    const input = this.resolveInput(nodeData.userPrompt, context);
+    const input = resolveTemplate(nodeData.userPrompt || '', context);
 
     const options: AgentRunOptions = {
       context,
@@ -100,25 +101,5 @@ export class AgentNodeExecutor implements INodeExecutor {
     }
 
     return config;
-  }
-
-  /**
-   * 解析输入（支持模板变量）
-   */
-  private resolveInput(template: string, context: Record<string, any>): string {
-    if (!template) return '';
-
-    return template.replace(/\{\{(.+?)\}\}/g, (match, p1) => {
-      const keys = p1.trim().split('.');
-      let value = context;
-      for (const key of keys) {
-        if (value && typeof value === 'object' && key in value) {
-          value = value[key];
-        } else {
-          return match;
-        }
-      }
-      return typeof value === 'object' ? JSON.stringify(value) : String(value);
-    });
   }
 }

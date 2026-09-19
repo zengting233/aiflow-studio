@@ -43,7 +43,7 @@ export interface WorkflowSlice {
   updateWorkflow: (id: string, data: Partial<Workflow>) => Promise<Workflow>
   saveWorkflow: (id: string, data: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => Promise<Workflow>
   runWorkflow: (workflowId: string) => Promise<any>
-  streamRunWorkflow: (workflowId: string, inputs: Record<string, any>) => Promise<void>
+  streamRunWorkflow: (workflowId: string, inputs: Record<string, any>, signal?: AbortSignal) => Promise<void>
   deleteWorkflow: (id: string) => Promise<void>
   clearExecutionStates: () => void
 }
@@ -137,7 +137,7 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
     }
   },
 
-  streamRunWorkflow: async (workflowId, inputs) => {
+  streamRunWorkflow: async (workflowId, inputs, signal) => {
     set({ executionStatus: 'running', executionStates: {} })
     
     try {
@@ -150,7 +150,8 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ inputs })
+        body: JSON.stringify({ inputs }),
+        signal,
       })
 
       if (!response.ok) {
@@ -194,6 +195,20 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
       }
       if (streamError) throw new Error(streamError)
     } catch (error) {
+      if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+        set((state) => ({
+          executionStatus: 'stopped',
+          executionStates: Object.fromEntries(
+            Object.entries(state.executionStates).map(([nodeId, nodeState]) => [
+              nodeId,
+              nodeState.status === 'running' || nodeState.status === 'retrying'
+                ? { ...nodeState, status: 'stopped' as const }
+                : nodeState,
+            ]),
+          ),
+        }))
+        return
+      }
       set({ executionStatus: 'failed' })
       throw error
     }
@@ -218,7 +233,15 @@ export const createWorkflowSlice: StateCreator<WorkflowSlice> = (set, get) => ({
     try {
       const response = await request.get(`/workflows/${id}`) as any
       const workflow = response.data as Workflow
-      set({ currentWorkflow: workflow, nodes: workflow.nodes || [], edges: workflow.edges || [], isLoading: false })
+      set({
+        currentWorkflow: workflow,
+        nodes: workflow.nodes || [],
+        edges: workflow.edges || [],
+        selectedNode: null,
+        executionStates: {},
+        executionStatus: null,
+        isLoading: false,
+      })
       return workflow
     } catch (error) {
       set({ isLoading: false })
